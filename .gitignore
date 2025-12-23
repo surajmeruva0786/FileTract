@@ -53,9 +53,10 @@ desktop.ini
 *.csv
 *.xlsx
 
-# Markdown files (except README)
+# Markdown files (except README and PATENT_STRATEGY)
 *.md
 !README.md
+!PATENT_STRATEGY.md
 
 # Keep only Python files and essential config
 !*.py
