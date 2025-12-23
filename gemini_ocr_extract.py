@@ -7,12 +7,21 @@ from PIL import Image
 import io
 import google.generativeai as genai
 from typing import List, Dict, Any
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Path to Tesseract executable
 pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
 
-# Configure Gemini API
-GEMINI_API_KEY = "AIzaSyArTJuxZ2h0cpE_faiYFhOwlK-UmuJyY2s"
+# Configure Gemini API - load from environment variable
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+if not GEMINI_API_KEY:
+    print("❌ Error: GEMINI_API_KEY not found in .env file")
+    print("Please create a .env file with your API key (see .env.example)")
+    sys.exit(1)
+
 genai.configure(api_key=GEMINI_API_KEY)
 
 # ============================================================
