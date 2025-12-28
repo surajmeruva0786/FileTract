@@ -13,13 +13,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Path to Tesseract executable - environment-aware for deployment
+# Priority: 1. TESSERACT_CMD env var, 2. Default Linux path, 3. Windows path
 tesseract_cmd = os.environ.get('TESSERACT_CMD')
+
 if tesseract_cmd:
+    # Use environment variable if set (production)
     pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-elif os.name == 'nt':  # Windows
-    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-else:  # Linux/Unix
-    pytesseract.pytesseract.tesseract_cmd = '/usr/bin/tesseract'
+    print(f"✓ Using Tesseract from TESSERACT_CMD: {tesseract_cmd}")
+else:
+    # Fallback based on OS
+    if os.name == 'nt':  # Windows
+        pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+        print("✓ Using Windows Tesseract path")
+    else:  # Linux/Unix (Docker, Render)
+        pytesseract.pytesseract.tesseract_cmd = 'tesseract'  # Use system PATH
+        print("✓ Using system Tesseract (Linux)")
 
 # Configure Gemini API - load from environment variable
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
