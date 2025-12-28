@@ -12,6 +12,10 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# Set Tesseract path environment variable (CRITICAL - must be before COPY)
+ENV TESSERACT_CMD=/usr/bin/tesseract
+ENV FLASK_ENV=production
+
 # Copy requirements first for better caching
 COPY requirements.txt .
 
@@ -25,12 +29,8 @@ COPY . .
 # Create necessary directories
 RUN mkdir -p uploads results
 
-# Expose port
+# Expose port (Render will override with PORT env var)
 EXPOSE 5000
 
-# Set environment variables
-ENV TESSERACT_CMD=/usr/bin/tesseract
-ENV FLASK_ENV=production
-
-# Run the application
-CMD ["gunicorn", "app:app", "--bind", "0.0.0.0:5000"]
+# Run the application with gunicorn
+CMD gunicorn app:app --bind 0.0.0.0:$PORT
