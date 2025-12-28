@@ -1,14 +1,13 @@
 services:
   - type: web
     name: filetract
-    env: python
-    buildCommand: ./render-build.sh
-    startCommand: gunicorn app:app
+    env: docker
+    dockerfilePath: ./Dockerfile
+    region: oregon
+    plan: free
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.0
       - key: GEMINI_API_KEY
         sync: false
-      - key: TESSERACT_CMD
-        value: /usr/bin/tesseract
+      - key: PORT
+        value: 5000
     healthCheckPath: /api/health
