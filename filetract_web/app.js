@@ -1,7 +1,10 @@
 ﻿// FileTract Frontend JavaScript
 // Connects to Flask backend API - Supports Multi-File Batch Processing
 
-const API_BASE = 'http://localhost:5000/api';
+// Dynamically set API base URL based on environment
+const API_BASE = window.location.hostname === 'localhost'
+    ? 'http://localhost:5000/api'
+    : '/api';
 
 let currentJobIds = [];
 let currentResults = null;
