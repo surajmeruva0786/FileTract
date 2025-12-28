@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: filetract
+    env: python
+    buildCommand: ./render-build.sh
+    startCommand: gunicorn app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.0
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TESSERACT_CMD
+        value: /usr/bin/tesseract
+    healthCheckPath: /api/health

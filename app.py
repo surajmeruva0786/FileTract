@@ -337,8 +337,15 @@ if __name__ == '__main__':
     print("=" * 80)
     print("🚀 FileTract Backend API - Patent-Eligible OCR Pipeline")
     print("=" * 80)
-    print(f"📡 Server: http://localhost:5000")
-    print(f"📄 Frontend: http://localhost:5000")
+    
+    # Get port from environment variable (Render sets this)
+    port = int(os.environ.get('PORT', 5000))
+    
+    # Use debug=False in production
+    debug = os.environ.get('FLASK_ENV') != 'production'
+    
+    print(f"📡 Server: http://localhost:{port}")
+    print(f"📄 Frontend: http://localhost:{port}")
     print(f"🔧 API Endpoints:")
     print(f"   POST /api/upload - Upload document")
     print(f"   POST /api/extract - Extract fields")
@@ -347,4 +354,4 @@ if __name__ == '__main__':
     print(f"   GET  /api/jobs - List all jobs")
     print("=" * 80)
     
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=debug, host='0.0.0.0', port=port)
