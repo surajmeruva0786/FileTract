@@ -117,31 +117,44 @@ def extract_fields_with_gemini(extracted_text: str, fields: List[str]) -> Dict[s
         # Create the model - using gemini-2.5-flash (confirmed available)
         model = genai.GenerativeModel('gemini-2.5-flash')
         
-        # Construct the prompt with better structure
+        # Construct the prompt with anti-hallucination instructions
         fields_list = ", ".join(fields)
-        prompt = f"""You are an expert at extracting structured data from OCR text of documents.
-
-The following is OCR text extracted from a document. The text may contain OCR errors, typos, or formatting issues.
+        
+        # Check if OCR text is empty or too short
+        if not extracted_text or len(extracted_text.strip()) < 10:
+            print("  ⚠️ Warning: OCR text is empty or very short - returning null values")
+            return {field: None for field in fields}
+        
+        prompt = f"""You are a precise data extraction assistant. Your job is to extract ONLY the information that is EXPLICITLY present in the OCR text below.
 
 OCR TEXT:
 ---
 {extracted_text}
 ---
 
-TASK: Extract the following fields from the above text:
+TASK: Extract these fields from the text above:
 {fields_list}
 
-INSTRUCTIONS:
-1. Look for these field names or similar variations in the text
-2. Extract the corresponding values
-3. If a field is not found or unclear, use null
-4. Return ONLY a valid JSON object with field names as keys
-5. Do not include any markdown formatting, code blocks, or explanations
+CRITICAL RULES:
+1. Extract ONLY information that is CLEARLY visible in the OCR text
+2. DO NOT make up, invent, or guess any information
+3. DO NOT use placeholder values like "John Doe", "ABC School", etc.
+4. If a field is not found in the text, set its value to null
+5. If the text is unclear or ambiguous, set the value to null
+6. Return ONLY a valid JSON object - no explanations, no markdown
+7. Use the EXACT field names provided above as JSON keys
 
-EXAMPLE OUTPUT FORMAT:
-{{"Name": "John Doe", "Father Name": "Robert Doe", "School": "ABC High School"}}
+CORRECT EXAMPLE (when data exists):
+{{"Name": "RAPOLU SHIVA TEJA", "School": "NEW VISION CONCEPT SCHOOL"}}
 
-Now extract the fields and return the JSON:"""
+CORRECT EXAMPLE (when data is missing):
+{{"Name": null, "School": null}}
+
+WRONG - DO NOT DO THIS:
+{{"Name": "John Doe", "School": "ABC High School"}}  ← NEVER use fake placeholder data
+
+Now extract the fields and return ONLY the JSON:"""
+        
         
         # Generate response
         print("  🤖 Sending request to Gemini API...")
