@@ -37,13 +37,26 @@ class AdaptiveReOCREngine:
     Patent-eligible component: Heuristic parameter selection based on quality metrics.
     """
     
-    def __init__(self, tesseract_cmd: str = r"C:\Program Files\Tesseract-OCR\tesseract.exe"):
+    def __init__(self, tesseract_cmd: str = None):
         """
         Initialize adaptive re-OCR engine.
         
         Args:
-            tesseract_cmd: Path to Tesseract executable
+            tesseract_cmd: Path to Tesseract executable (optional, auto-detected if not provided)
         """
+        # Auto-detect Tesseract path if not provided
+        if tesseract_cmd is None:
+            import os
+            # Check if running in Docker
+            if os.path.exists('/.dockerenv'):
+                tesseract_cmd = 'tesseract'
+            elif os.environ.get('TESSERACT_CMD'):
+                tesseract_cmd = os.environ.get('TESSERACT_CMD')
+            elif os.name == 'nt':
+                tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+            else:
+                tesseract_cmd = 'tesseract'
+        
         pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
         self.quality_analyzer = ImageQualityAnalyzer()
         self.confidence_improvement_threshold = 0.1  # Minimum improvement to accept
