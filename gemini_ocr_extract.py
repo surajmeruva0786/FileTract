@@ -13,21 +13,35 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Path to Tesseract executable - environment-aware for deployment
-# Priority: 1. TESSERACT_CMD env var, 2. Default Linux path, 3. Windows path
-tesseract_cmd = os.environ.get('TESSERACT_CMD')
+# CRITICAL: Force Linux path in Docker/container environments
+import platform
 
-if tesseract_cmd:
-    # Use environment variable if set (production)
-    pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-    print(f"✓ Using Tesseract from TESSERACT_CMD: {tesseract_cmd}")
+# Check if running in Docker/container
+def is_docker():
+    """Detect if running inside Docker container"""
+    try:
+        with open('/proc/1/cgroup', 'r') as f:
+            return 'docker' in f.read() or 'containerd' in f.read()
+    except:
+        return False
+
+# Determine Tesseract path
+if is_docker() or os.path.exists('/.dockerenv'):
+    # Running in Docker - use system tesseract
+    pytesseract.pytesseract.tesseract_cmd = 'tesseract'
+    print("✓ Docker detected - Using system Tesseract")
+elif os.environ.get('TESSERACT_CMD'):
+    # Use environment variable if explicitly set
+    pytesseract.pytesseract.tesseract_cmd = os.environ.get('TESSERACT_CMD')
+    print(f"✓ Using Tesseract from TESSERACT_CMD: {os.environ.get('TESSERACT_CMD')}")
+elif os.name == 'nt':
+    # Windows
+    pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    print("✓ Using Windows Tesseract path")
 else:
-    # Fallback based on OS
-    if os.name == 'nt':  # Windows
-        pytesseract.pytesseract.tesseract_cmd = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
-        print("✓ Using Windows Tesseract path")
-    else:  # Linux/Unix (Docker, Render)
-        pytesseract.pytesseract.tesseract_cmd = 'tesseract'  # Use system PATH
-        print("✓ Using system Tesseract (Linux)")
+    # Linux/Unix fallback
+    pytesseract.pytesseract.tesseract_cmd = 'tesseract'
+    print("✓ Using system Tesseract (Linux)")
 
 # Configure Gemini API - load from environment variable
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
