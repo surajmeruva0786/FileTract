@@ -140,6 +140,13 @@ def extract_image_with_confidence(image_path: str) -> Dict:
     low_conf_regions = [r for r in all_regions if r.is_low_confidence]
     reocr_results = []
     
+    # OPTIMIZATION: Limit re-OCR to prevent timeouts on free tier
+    MAX_REOCR_REGIONS = 50  # Process max 50 regions to avoid timeout
+    if len(low_conf_regions) > MAX_REOCR_REGIONS:
+        print(f"  ⚠️ Limiting re-OCR to {MAX_REOCR_REGIONS} regions (found {len(low_conf_regions)})")
+        # Sort by confidence and process worst regions first
+        low_conf_regions = sorted(low_conf_regions, key=lambda r: r.mean_confidence)[:MAX_REOCR_REGIONS]
+    
     if low_conf_regions:
         print(f"  🔄 Stage 3: Adaptive re-OCR on {len(low_conf_regions)} regions...")
         reocr_engine = AdaptiveReOCREngine()
@@ -148,6 +155,8 @@ def extract_image_with_confidence(image_path: str) -> Dict:
         # Show improvement stats
         successful = sum(1 for r in reocr_results if r.success)
         print(f"    - Successful improvements: {successful}/{len(reocr_results)}")
+    else:
+        print("  ✓ Stage 3: No low-confidence regions found, skipping re-OCR")
     
     # Stage 4: Result fusion
     print("  🔀 Stage 4: Confidence-weighted result fusion...")

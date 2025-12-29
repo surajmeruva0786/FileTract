@@ -54,13 +54,37 @@ def convert_numpy_types(obj):
 
 def process_job_async(job_id: str, file_path: str, fields: List[str], pipeline: str):
     """Process OCR job asynchronously"""
+    import time
+    start_time = time.time()
+    
     try:
         jobs[job_id]['status'] = 'processing'
         jobs[job_id]['current_stage'] = 1
         
         if pipeline == 'patent':
-            # Patent pipeline with 5 stages
-            results = process_document_with_patent_pipeline(file_path, fields)
+            print(f"Starting patent pipeline for job {job_id}...")
+            
+            # Patent pipeline with 5 stages - with timeout protection
+            try:
+                results = process_document_with_patent_pipeline(file_path, fields)
+            except Exception as pipeline_error:
+                print(f"Patent pipeline error: {pipeline_error}")
+                # Fallback to standard pipeline if patent fails
+                print(f"Falling back to standard pipeline for job {job_id}")
+                ext = os.path.splitext(file_path)[1].lower()
+                if ext == '.pdf':
+                    from gemini_ocr_extract import extract_text_from_pdf, extract_fields_with_gemini
+                    text = extract_text_from_pdf(file_path)
+                else:
+                    from gemini_ocr_extract import extract_text_from_image, extract_fields_with_gemini
+                    text = extract_text_from_image(file_path)
+                
+                extracted_data = extract_fields_with_gemini(text, fields)
+                jobs[job_id]['status'] = 'complete'
+                jobs[job_id]['current_stage'] = 2
+                jobs[job_id]['results'] = extracted_data
+                jobs[job_id]['warning'] = 'Patent pipeline failed, used standard pipeline instead'
+                return
             
             # Convert all results to JSON-serializable format
             serializable_results = {
@@ -84,12 +108,16 @@ def process_job_async(job_id: str, file_path: str, fields: List[str], pipeline: 
                     'job_id': job_id,
                     'pipeline': 'patent',
                     'timestamp': datetime.now().isoformat(),
-                    'results': serializable_results
+                    'results': serializable_results,
+                    'processing_time': time.time() - start_time
                 }, f, indent=2)
             
             jobs[job_id]['status'] = 'complete'
             jobs[job_id]['current_stage'] = 5
             jobs[job_id]['results'] = serializable_results
+            
+            elapsed = time.time() - start_time
+            print(f"Patent pipeline completed for job {job_id} in {elapsed:.2f}s")
             
         else:
             # Standard pipeline
