@@ -478,17 +478,44 @@ For issues, questions, or feature requests:
 
 ---
 
+## 📱 Mobile Application (NEW)
+
+FileTract now includes a **React Native (Expo) mobile app** for on-the-go ID card scanning and extraction.
+
+### Mobile App Features
+- 📷 **Camera Capture** or gallery upload for ID cards (Aadhaar, PAN, Voter ID, Student ID, etc.)
+- 🎯 **Flexible Fields**: Choose preset templates or define custom fields
+- ⚡ **Pipeline Choice**: Standard (fast) or Patent (accurate) pipeline
+- 👁 **Live Preview**: See extracted data with OCR confidence scores
+- ✏️ **Inline Editing**: Correct fields before export
+- 📊 **Google Sheets Export**: One-tap export via Google Apps Script Web App
+
+### Mobile App Quick Start
+
+```bash
+cd filetract_mobile
+npm install
+npx expo start
+```
+
+See [filetract_mobile/README.md](filetract_mobile/README.md) for full setup including Google Sheets integration.
+
+### Google Sheets Integration
+The app exports extracted data directly to Google Sheets via an Apps Script Web App.
+Deploy [filetract_mobile/google_apps_script/Code.gs](filetract_mobile/google_apps_script/Code.gs) in your Google Sheet's Apps Script editor — see the mobile README for step-by-step instructions.
+
+---
+
 ## 🔮 Future Enhancements
 
 ### Planned Features
+- [x] Mobile app for ID card scanning (added June 2026)
 - [ ] Batch processing with cross-document validation
 - [ ] Dynamic prompt refinement from user corrections
 - [ ] Spatial-semantic field disambiguation
 - [ ] Statistical outlier detection for hallucination mitigation
-- [ ] Web-based UI for easier access
 - [ ] Multi-language OCR support
-- [ ] Cloud deployment options
-- [ ] REST API for integration
+- [ ] EAS cloud builds for APK/IPA distribution
 
 ### Patent Pipeline Enhancements
 - [ ] Adaptive kernel sizing based on document characteristics
@@ -500,6 +527,6 @@ For issues, questions, or feature requests:
 
 **FileTract** - Transform stacks of documents into structured, actionable data with the power of AI and patent-pending confidence optimization.
 
-**Version**: 2.0 (Patent-Eligible)  
-**Last Updated**: December 2025  
+**Version**: 3.0 (Mobile-Ready)  
+**Last Updated**: June 2026  
 **Status**: Production Ready

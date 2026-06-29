@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "FileTract",
+    "slug": "filetract-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0a0a12"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.filetract.mobile",
+      "infoPlist": {
+        "NSCameraUsageDescription": "FileTract needs camera access to photograph ID cards and documents for field extraction.",
+        "NSPhotoLibraryUsageDescription": "FileTract needs photo library access to select ID card images for processing.",
+        "NSPhotoLibraryAddUsageDescription": "FileTract needs permission to save processed document images."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0a0a12"
+      },
+      "package": "com.filetract.mobile",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "FileTract needs access to your photos to select ID card images.",
+          "cameraPermission": "FileTract needs camera access to photograph ID cards."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "FileTract needs camera access to photograph ID cards and documents."
+        }
+      ]
+    ],
+    "scheme": "filetract",
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
