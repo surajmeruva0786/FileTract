@@ -3,11 +3,13 @@ Confidence-Aware LLM Module
 Part of Patent-Eligible OCR Pipeline
 
 Constructs confidence-aware prompts and extracts fields with quality metadata.
+v3: Added vision-direct extraction method as primary path.
 """
 
 import json
+import re
 import google.generativeai as genai
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
 from result_fusion import FusedRegion

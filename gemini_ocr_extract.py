@@ -111,88 +111,96 @@ def extract_text_from_file(file_path: str) -> str:
 # 🔹 GEMINI API INTEGRATION
 # ============================================================
 
-def extract_fields_with_gemini(extracted_text: str, fields: List[str]) -> Dict[str, Any]:
-    """Use Gemini API to extract specified fields from OCR text"""
-    try:
-        # Create the model - using gemini-2.5-flash (confirmed available)
-        model = genai.GenerativeModel('gemini-2.5-flash')
-        
-        # Construct the prompt with anti-hallucination instructions
-        fields_list = ", ".join(fields)
-        
-        # Check if OCR text is empty or too short
-        if not extracted_text or len(extracted_text.strip()) < 10:
-            print("  ⚠️ Warning: OCR text is empty or very short - returning null values")
-            return {field: None for field in fields}
-        
-        prompt = f"""You are a precise data extraction assistant. Your job is to extract ONLY the information that is EXPLICITLY present in the OCR text below.
+def extract_fields_with_gemini(
+    extracted_text: str,
+    fields: List[str],
+    image_path: str = None
+) -> Dict[str, Any]:
+    """
+    Extract fields using Gemini.
+
+    If image_path is provided, uses Gemini Vision (multimodal) for dramatically
+    better accuracy — bypasses OCR error propagation entirely.
+    Falls back to text-only extraction when no image is available.
+    """
+    import re
+
+    model = genai.GenerativeModel(
+        'gemini-2.5-flash',
+        generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=2048)
+    )
+
+    def _parse(text: str) -> Dict:
+        text = re.sub(r'```json\s*', '', text)
+        text = re.sub(r'```\s*', '', text)
+        text = text.strip()
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            m = re.search(r'\{.*\}', text, re.DOTALL)
+            return json.loads(m.group()) if m else {}
+
+    fields_list = ", ".join(fields)
+
+    # ── Vision path (preferred) ────────────────────────────────────────────
+    if image_path and os.path.exists(image_path):
+        try:
+            from PIL import Image as PILImage
+            pil_img = PILImage.open(image_path).convert('RGB')
+
+            prompt = f"""You are an expert document reader.
+Extract EXACTLY these fields from the document image: {fields_list}
+
+Rules:
+1. Copy text EXACTLY as printed (preserve capitalization, spaces, dashes)
+2. Return null for any field not clearly visible
+3. NEVER invent or guess values
+4. Return ONLY a valid JSON object — no markdown, no explanation
+
+JSON:"""
+            print("  🤖 Vision extraction (Gemini Vision)...")
+            response = model.generate_content([pil_img, prompt])
+            parsed = _parse(response.text)
+            result = {f: (parsed.get(f) if parsed.get(f) not in (None, 'null', '') else None) for f in fields}
+            found = sum(1 for v in result.values() if v)
+            print(f"  ✅ Vision: {found}/{len(fields)} fields extracted")
+            return result
+        except Exception as e:
+            print(f"  ⚠ Vision extraction failed ({e}), falling back to text mode")
+
+    # ── Text path (fallback) ───────────────────────────────────────────────
+    if not extracted_text or len(extracted_text.strip()) < 10:
+        print("  ⚠️ OCR text empty — returning null values")
+        return {field: None for field in fields}
+
+    prompt = f"""You are a precise data extraction assistant.
+Extract ONLY information EXPLICITLY present in the OCR text below.
 
 OCR TEXT:
 ---
 {extracted_text}
 ---
 
-TASK: Extract these fields from the text above:
-{fields_list}
+Extract these fields: {fields_list}
 
-CRITICAL RULES:
-1. Extract ONLY information that is CLEARLY visible in the OCR text
-2. DO NOT make up, invent, or guess any information
-3. DO NOT use placeholder values like "John Doe", "ABC School", etc.
-4. If a field is not found in the text, set its value to null
-5. If the text is unclear or ambiguous, set the value to null
-6. Return ONLY a valid JSON object - no explanations, no markdown
-7. Use the EXACT field names provided above as JSON keys
+RULES:
+1. Extract ONLY clearly visible information
+2. DO NOT make up or guess values
+3. If a field is absent or unclear: null
+4. Return ONLY valid JSON — no markdown
 
-CORRECT EXAMPLE (when data exists):
-{{"Name": "RAPOLU SHIVA TEJA", "School": "NEW VISION CONCEPT SCHOOL"}}
+JSON:"""
 
-CORRECT EXAMPLE (when data is missing):
-{{"Name": null, "School": null}}
-
-WRONG - DO NOT DO THIS:
-{{"Name": "John Doe", "School": "ABC High School"}}  ← NEVER use fake placeholder data
-
-Now extract the fields and return ONLY the JSON:"""
-        
-        
-        # Generate response
-        print("  🤖 Sending request to Gemini API...")
+    try:
+        print("  🤖 Text extraction (Gemini)...")
         response = model.generate_content(prompt)
-        
-        # Debug: Print raw response
-        print(f"  📥 Gemini API Response received (length: {len(response.text)} chars)")
-        
-        # Parse JSON response
-        response_text = response.text.strip()
-        
-        # Remove markdown code blocks if present
-        if response_text.startswith("```json"):
-            response_text = response_text[7:]
-        elif response_text.startswith("```"):
-            response_text = response_text[3:]
-        
-        if response_text.endswith("```"):
-            response_text = response_text[:-3]
-        
-        response_text = response_text.strip()
-        
-        # Debug: Print cleaned response
-        print(f"  📝 Cleaned response: {response_text[:200]}...")
-        
-        # Parse JSON
-        extracted_data = json.loads(response_text)
-        print(f"  ✅ Successfully parsed {len(extracted_data)} fields")
-        return extracted_data
-        
-    except json.JSONDecodeError as e:
-        print(f"  ⚠ Error parsing Gemini response as JSON: {e}")
-        print(f"  📄 Response text: {response_text[:500]}")
-        return {field: None for field in fields}
+        parsed = _parse(response.text)
+        result = {f: (parsed.get(f) if parsed.get(f) not in (None, 'null', '') else None) for f in fields}
+        found = sum(1 for v in result.values() if v)
+        print(f"  ✅ Text: {found}/{len(fields)} fields extracted")
+        return result
     except Exception as e:
-        print(f"  ❌ Error calling Gemini API: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"  ❌ Gemini text extraction failed: {e}")
         return {field: None for field in fields}
 
 

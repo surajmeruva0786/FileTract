@@ -120,20 +120,21 @@ def process_job_async(job_id: str, file_path: str, fields: List[str], pipeline: 
             print(f"Patent pipeline completed for job {job_id} in {elapsed:.2f}s")
             
         else:
-            # Standard pipeline
+            # Standard pipeline — now uses Vision when available
             jobs[job_id]['current_stage'] = 1
-            
-            # Extract text
+
             ext = os.path.splitext(file_path)[1].lower()
             if ext == '.pdf':
                 text = extract_text_from_pdf(file_path)
+                image_path_for_vision = None  # PDF: vision handled inside gemini_ocr_extract
             else:
                 text = extract_text_from_image(file_path)
-            
+                image_path_for_vision = file_path  # Pass image for Vision extraction
+
             jobs[job_id]['current_stage'] = 2
-            
-            # Extract fields
-            extracted_data = extract_fields_with_gemini(text, fields)
+
+            # Use Vision when image is available (dramatically better accuracy)
+            extracted_data = extract_fields_with_gemini(text, fields, image_path=image_path_for_vision)
             
             # Save results
             result_path = os.path.join(RESULTS_FOLDER, f"{job_id}_results.json")
