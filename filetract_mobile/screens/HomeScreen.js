@@ -10,7 +10,6 @@ import {
 } from 'react-native';
 import * as ImagePicker from 'expo-image-picker';
 import { Ionicons } from '@expo/vector-icons';
-import { colors, typography, spacing } from '../theme';
 
 export default function HomeScreen({ navigation }) {
   const pickFromCamera = useCallback(async () => {

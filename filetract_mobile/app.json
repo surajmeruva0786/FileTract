@@ -39,7 +39,6 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-router",
       [
         "expo-image-picker",
         {
@@ -54,9 +53,6 @@
         }
       ]
     ],
-    "scheme": "filetract",
-    "experiments": {
-      "typedRoutes": true
-    }
+    "scheme": "filetract"
   }
 }
