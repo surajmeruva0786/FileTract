@@ -12,6 +12,7 @@ from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 import threading
+import concurrent.futures
 from typing import Dict, List
 
 # Import patent pipeline modules
@@ -52,31 +53,47 @@ def convert_numpy_types(obj):
     else:
         return obj
 
+PATENT_PIPELINE_TIMEOUT = 150  # seconds — hard cap so a stalled call can't hang a job forever
+STANDARD_PIPELINE_TIMEOUT = 60  # seconds
+
+def _run_with_timeout(func, args, timeout):
+    """
+    Run func(*args) with a hard wall-clock timeout, raising TimeoutError if exceeded.
+    Uses shutdown(wait=False) — a plain `with` block would call shutdown(wait=True)
+    on exit and block until the stalled thread finishes anyway, defeating the timeout.
+    """
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
+        future = executor.submit(func, *args)
+        return future.result(timeout=timeout)
+    finally:
+        executor.shutdown(wait=False)
+
 def process_job_async(job_id: str, file_path: str, fields: List[str], pipeline: str):
     """Process OCR job asynchronously"""
     import time
     start_time = time.time()
-    
+
     try:
         jobs[job_id]['status'] = 'processing'
         jobs[job_id]['current_stage'] = 1
-        
+
         if pipeline == 'patent':
             print(f"Starting patent pipeline for job {job_id}...")
-            
-            # Patent pipeline with 5 stages - with timeout protection
+
+            # Patent pipeline with 5 stages - with real timeout protection
             try:
-                results = process_document_with_patent_pipeline(file_path, fields)
+                results = _run_with_timeout(
+                    process_document_with_patent_pipeline, (file_path, fields), PATENT_PIPELINE_TIMEOUT
+                )
             except Exception as pipeline_error:
                 print(f"Patent pipeline error: {pipeline_error}")
                 # Fallback to standard pipeline if patent fails
                 print(f"Falling back to standard pipeline for job {job_id}")
                 ext = os.path.splitext(file_path)[1].lower()
                 if ext == '.pdf':
-                    from gemini_ocr_extract import extract_text_from_pdf, extract_fields_with_gemini
                     text = extract_text_from_pdf(file_path)
                 else:
-                    from gemini_ocr_extract import extract_text_from_image, extract_fields_with_gemini
                     text = extract_text_from_image(file_path)
                 
                 extracted_data = extract_fields_with_gemini(text, fields)
@@ -134,7 +151,9 @@ def process_job_async(job_id: str, file_path: str, fields: List[str], pipeline: 
             jobs[job_id]['current_stage'] = 2
 
             # Use Vision when image is available (dramatically better accuracy)
-            extracted_data = extract_fields_with_gemini(text, fields, image_path=image_path_for_vision)
+            extracted_data = _run_with_timeout(
+                extract_fields_with_gemini, (text, fields, image_path_for_vision), STANDARD_PIPELINE_TIMEOUT
+            )
             
             # Save results
             result_path = os.path.join(RESULTS_FOLDER, f"{job_id}_results.json")

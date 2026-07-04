@@ -59,6 +59,28 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-04 — Fixed Website Pipelines Hanging Forever With No Result
+
+**What changed:**
+- User reported both the standard and patent pipelines on the website would load indefinitely and never return a result for a simple image.
+- **`sota_extraction_engine.py`** — `_call()` (used by every Gemini request in the SOTA/patent engine: doc-type detection, all 3 extraction strategies, self-verification) had no request timeout at all. A stalled network call could block forever. Added `request_options={'timeout': 45}`.
+- **`sota_extraction_engine.py`** — the parallel-strategy `with concurrent.futures.ThreadPoolExecutor(...) as executor:` block was pointless as a safety net: `fut.result(timeout=90)` gives up reading a slow future, but the `with` block's `__exit__` still calls `shutdown(wait=True)`, which blocks until every submitted thread actually finishes anyway — silently defeating the timeout. Switched to a manual `executor.shutdown(wait=False)` in a `finally`.
+- **`gemini_ocr_extract.py`** — same missing-timeout issue on both the vision and text-mode `model.generate_content()` calls in the standard pipeline. Added the same 45s `request_options` timeout.
+- **`app.py`** — added a real outer wall-clock timeout (`_run_with_timeout`, patent=150s / standard=60s) around both pipeline entry points. The old code had a comment claiming "timeout protection" but it was only an exception-catching `try/except` — no actual time bound existed anywhere above the per-call level.
+- **`app.py`** — fixed a guaranteed crash in the standard pipeline: the patent-pipeline's exception-fallback branch did `from gemini_ocr_extract import extract_text_from_image, ...` as a *local* import inside an `except` block. Python decides variable scope for a whole function at compile time, so that local import made `extract_text_from_image` (and friends) local to all of `process_job_async` — including the completely separate `else:` (standard pipeline) branch, which never executes that import line. Every standard-pipeline request hit `UnboundLocalError: cannot access local variable 'extract_text_from_image'` before this fix. Removed the redundant local imports (already imported at module level).
+
+**Why:** Root cause of "keeps loading and loading, then no result" was the combination of unbounded Gemini calls (can hang indefinitely on a stalled request) and a per-future timeout that didn't actually stop the wait. The standard pipeline had a second, independent bug that crashed it outright on every request regardless of network conditions.
+
+**Verified locally:** ran the Flask server against `certif_img1.png`, confirmed the standard pipeline completes in ~3–12s with no crash (previously threw `UnboundLocalError` on every call). Full Vision extraction quality could not be verified end-to-end because the local `.env` `GEMINI_API_KEY` is being rejected by Google (`400 API_KEY_INVALID`) — this is a separate, local-only credential issue, not a code bug. Needs a valid key (locally, and confirm the one set in Render's environment variables for the live site) to fully verify extraction accuracy.
+
+**Files changed:**
+- `app.py`
+- `sota_extraction_engine.py`
+- `gemini_ocr_extract.py`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-04 — Mobile App: Fixed Broken Entry Point + First Successful Build
 
 **What changed:**

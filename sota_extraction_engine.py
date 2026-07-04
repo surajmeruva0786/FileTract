@@ -141,9 +141,11 @@ class SOTAExtractionEngine:
                 hints.append(f'• {f}: Locate and extract this field from the document')
         return '\n'.join(hints)
 
-    def _call(self, parts) -> str:
-        """Single Gemini multimodal call."""
-        return self.model.generate_content(parts).text.strip()
+    def _call(self, parts, timeout: int = 45) -> str:
+        """Single Gemini multimodal call, bounded so a stalled request fails fast instead of hanging."""
+        return self.model.generate_content(
+            parts, request_options={'timeout': timeout}
+        ).text.strip()
 
     # ─── Document Type Detection ──────────────────────────────────────────
 
@@ -418,7 +420,12 @@ Return ONLY JSON:"""
         print("    [SOTA] Parallel extraction (3 strategies)...")
         strategy_results: List[StrategyResult] = []
 
-        with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
+        # Not using ThreadPoolExecutor as a context manager: its __exit__ calls
+        # shutdown(wait=True), which blocks until every submitted thread finishes —
+        # ignoring any per-future timeout below. shutdown(wait=False) lets a stalled
+        # request keep running in the background without hanging this response.
+        executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+        try:
             futures = {
                 executor.submit(self._strategy_vision_primary, pil_image, fields, doc_type): 'A:vision_primary',
                 executor.submit(self._strategy_vision_analytical, pil_image, fields, doc_type): 'B:vision_analytical',
@@ -430,12 +437,14 @@ Return ONLY JSON:"""
 
             for fut, label in futures.items():
                 try:
-                    res = fut.result(timeout=90)
+                    res = fut.result(timeout=60)
                     found = sum(1 for v in res.fields.values() if v)
                     print(f"    [SOTA] {label}: {found}/{len(fields)} fields")
                     strategy_results.append(res)
                 except Exception as e:
                     print(f"    [SOTA] {label} failed: {e}")
+        finally:
+            executor.shutdown(wait=False)
 
         if not strategy_results:
             # All strategies failed — return empty result

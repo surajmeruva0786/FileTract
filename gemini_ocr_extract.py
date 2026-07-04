@@ -159,7 +159,7 @@ Rules:
 
 JSON:"""
             print("  🤖 Vision extraction (Gemini Vision)...")
-            response = model.generate_content([pil_img, prompt])
+            response = model.generate_content([pil_img, prompt], request_options={'timeout': 45})
             parsed = _parse(response.text)
             result = {f: (parsed.get(f) if parsed.get(f) not in (None, 'null', '') else None) for f in fields}
             found = sum(1 for v in result.values() if v)
@@ -193,7 +193,7 @@ JSON:"""
 
     try:
         print("  🤖 Text extraction (Gemini)...")
-        response = model.generate_content(prompt)
+        response = model.generate_content(prompt, request_options={'timeout': 45})
         parsed = _parse(response.text)
         result = {f: (parsed.get(f) if parsed.get(f) not in (None, 'null', '') else None) for f in fields}
         found = sum(1 for v in result.values() if v)
