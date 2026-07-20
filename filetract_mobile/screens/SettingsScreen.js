@@ -87,15 +87,15 @@ export default function SettingsScreen({ navigation }) {
             style={styles.input}
             value={backendUrl}
             onChangeText={setBackendUrlState}
-            placeholder="https://your-app.onrender.com"
+            placeholder="https://filetract.onrender.com"
             placeholderTextColor={colors.textDim}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
           />
           <Text style={styles.hint}>
-            Point this to your FileTract Flask backend.{'\n'}
-            For local testing use your machine's LAN IP: http://192.168.x.x:5000
+            Defaults to https://filetract.onrender.com.{'\n'}
+            For local testing use your machine's LAN IP instead: http://192.168.x.x:5000
           </Text>
         </View>
 

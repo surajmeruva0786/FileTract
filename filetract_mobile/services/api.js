@@ -2,13 +2,11 @@ import axios from 'axios';
 
 // Configure this to your deployed FileTract backend URL
 // For local development: 'http://192.168.x.x:5000' (use your machine's LAN IP)
-// For Render.com deployment: 'https://your-app.onrender.com'
-const BASE_URL = 'https://your-filetract-backend.onrender.com';
+const BASE_URL = 'https://filetract.onrender.com';
 
 const apiClient = axios.create({
   baseURL: BASE_URL,
   timeout: 120000, // 2 minutes (patent pipeline can be slow)
-  headers: { 'Content-Type': 'multipart/form-data' },
 });
 
 export const setBackendUrl = (url) => {

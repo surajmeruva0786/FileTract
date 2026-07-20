@@ -31,9 +31,10 @@ npm install
 
 ### 2. Configure Backend URL
 
-In Settings (accessible from Home screen), enter your FileTract backend URL:
+The app defaults to the deployed backend at `https://filetract.onrender.com`. To point at a different
+backend (e.g. local dev), open Settings (accessible from Home screen) and enter:
 - Local dev: `http://192.168.x.x:5000` (your machine's LAN IP)
-- Deployed: `https://your-app.onrender.com`
+- Deployed: `https://filetract.onrender.com` (default)
 
 ### 3. Set Up Google Sheets Integration
 

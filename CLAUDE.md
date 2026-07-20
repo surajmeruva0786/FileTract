@@ -59,6 +59,27 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-20 — Wired Mobile App to Live Backend (https://filetract.onrender.com)
+
+**What changed:**
+- **`filetract_mobile/services/api.js`** — `BASE_URL` was a placeholder (`https://your-filetract-backend.onrender.com`) that would never resolve; set to the real deployed backend `https://filetract.onrender.com`.
+- **`filetract_mobile/services/api.js`** — removed a global default `Content-Type: multipart/form-data` header from the axios instance. That header had no `boundary` parameter and was applied to every request, including `uploadImage()`'s `FormData` POST. Explicitly setting `Content-Type: multipart/form-data` without a boundary prevents axios/React Native from auto-generating the correct boundary for the multipart body, which silently breaks file uploads (Werkzeug can't parse the parts without a boundary). Now the header is left unset on the FormData request so the platform sets it correctly; JSON requests (`extractFields`, `pollUntilComplete`) already set `Content-Type: application/json` explicitly per-call, so they're unaffected.
+- **`filetract_mobile/screens/SettingsScreen.js`**, **`filetract_mobile/README.md`** — updated placeholder/hint text to reference the real deployed URL instead of a generic `your-app.onrender.com` example.
+
+**Why:** The mobile app's screens, navigation, and API client shape (`uploadImage` → `extractFields` → `pollUntilComplete`, and the patent/standard result-parsing in `PreviewScreen.js`) were already correctly built and matched the backend's actual response shapes — but the app had never been pointed at a real backend, and had a latent multipart bug that would have broken the very first upload attempt regardless.
+
+**Verified:** Replicated the mobile app's exact HTTP contract (multipart upload → JSON `/api/extract` → poll `/api/status` → `/api/result`) against `https://filetract.onrender.com` via curl for both `standard` and `patent` pipelines — both complete end-to-end successfully (patent: 5 stages, ~83s; standard: ~5s). Not yet run on a physical device/emulator (no RN runtime available in this environment).
+
+**Known issue (pre-existing, not fixed here):** The patent pipeline's live result showed `"strategies_used": []` and `"consensus_rate": 0` — none of the parallel Gemini calls returned a usable value against a real test image. This matches the `GEMINI_API_KEY` problem already noted in the 2026-07-04 entry below (previously believed local-only); this test suggests it may also be affecting the Render deployment's key. Needs verification of the `GEMINI_API_KEY` set in Render's environment variables.
+
+**Files changed:**
+- `filetract_mobile/services/api.js`
+- `filetract_mobile/screens/SettingsScreen.js`
+- `filetract_mobile/README.md`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-04 — Fixed Website Pipelines Hanging Forever With No Result
 
 **What changed:**
