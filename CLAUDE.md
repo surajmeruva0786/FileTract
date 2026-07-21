@@ -59,6 +59,24 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-21 — Set Up EAS Build Pipeline for Mobile App APK
+
+**What changed:**
+- **`filetract_mobile/eas.json`** (NEW) — added EAS Build profiles: `development` and `preview` both build an installable Android `.apk` (`"buildType": "apk"`, `distribution": "internal"`) instead of the Play-Store-only `.aab` that's the platform default; `production` is left as an `.aab` for eventual Play Store submission.
+- **`filetract_mobile/app.json`** — ran `eas init --force` to create and link the EAS project `@surajmeruva0786/filetract-mobile` (project ID `54bb510c-efb0-4829-849d-397d0c8ef909`); this wrote `extra.eas.projectId` into the file, which EAS Build requires to associate builds with the project.
+- Kicked off the first cloud build: `eas build --platform android --profile preview --non-interactive`.
+
+**Why:** User wants to install and test the mobile app on a physical Android device without going through Expo Go / Metro. The project was never previously linked to an EAS account or configured to produce a directly-installable `.apk`.
+
+**Verified:** `eas whoami` confirmed existing login as `surajmeruva0786`. `eas init --force` succeeded and linked the project. Build was in progress at the time of this entry — result/APK link not yet confirmed.
+
+**Files changed:**
+- `filetract_mobile/eas.json` (NEW)
+- `filetract_mobile/app.json`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-21 — Migrated LLM Provider from Gemini to Groq
 
 **What changed:**

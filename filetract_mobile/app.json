@@ -30,9 +30,10 @@
       },
       "package": "com.filetract.mobile",
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -53,6 +54,12 @@
         }
       ]
     ],
-    "scheme": "filetract"
+    "scheme": "filetract",
+    "extra": {
+      "eas": {
+        "projectId": "54bb510c-efb0-4829-849d-397d0c8ef909"
+      }
+    },
+    "owner": "surajmeruva0786"
   }
 }
