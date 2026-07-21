@@ -5,7 +5,7 @@ import fitz  # PyMuPDF
 import pytesseract
 from PIL import Image
 import io
-import google.generativeai as genai
+import groq_ocr_client as genai
 from typing import List, Dict, Any
 from dotenv import load_dotenv
 
@@ -43,14 +43,14 @@ else:
     pytesseract.pytesseract.tesseract_cmd = 'tesseract'
     print("✓ Using system Tesseract (Linux)")
 
-# Configure Gemini API - load from environment variable
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    print("❌ Error: GEMINI_API_KEY not found in .env file")
+# Configure Groq API - load from environment variable
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    print("❌ Error: GROQ_API_KEY not found in .env file")
     print("Please create a .env file with your API key (see .env.example)")
     sys.exit(1)
 
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GROQ_API_KEY)
 
 # ============================================================
 # 🔹 OCR EXTRACTION FUNCTIONS
@@ -108,7 +108,7 @@ def extract_text_from_file(file_path: str) -> str:
 
 
 # ============================================================
-# 🔹 GEMINI API INTEGRATION
+# 🔹 GROQ API INTEGRATION
 # ============================================================
 
 def extract_fields_with_gemini(
@@ -117,16 +117,15 @@ def extract_fields_with_gemini(
     image_path: str = None
 ) -> Dict[str, Any]:
     """
-    Extract fields using Gemini.
+    Extract fields using Groq.
 
-    If image_path is provided, uses Gemini Vision (multimodal) for dramatically
+    If image_path is provided, uses Groq Vision (multimodal) for dramatically
     better accuracy — bypasses OCR error propagation entirely.
     Falls back to text-only extraction when no image is available.
     """
     import re
 
     model = genai.GenerativeModel(
-        'gemini-2.5-flash',
         generation_config=genai.types.GenerationConfig(temperature=0.0, max_output_tokens=2048)
     )
 
@@ -158,7 +157,7 @@ Rules:
 4. Return ONLY a valid JSON object — no markdown, no explanation
 
 JSON:"""
-            print("  🤖 Vision extraction (Gemini Vision)...")
+            print("  🤖 Vision extraction (Groq Vision)...")
             response = model.generate_content([pil_img, prompt], request_options={'timeout': 45})
             parsed = _parse(response.text)
             result = {f: (parsed.get(f) if parsed.get(f) not in (None, 'null', '') else None) for f in fields}
@@ -192,7 +191,7 @@ RULES:
 JSON:"""
 
     try:
-        print("  🤖 Text extraction (Gemini)...")
+        print("  🤖 Text extraction (Groq)...")
         response = model.generate_content(prompt, request_options={'timeout': 45})
         parsed = _parse(response.text)
         result = {f: (parsed.get(f) if parsed.get(f) not in (None, 'null', '') else None) for f in fields}
@@ -200,7 +199,7 @@ JSON:"""
         print(f"  ✅ Text: {found}/{len(fields)} fields extracted")
         return result
     except Exception as e:
-        print(f"  ❌ Gemini text extraction failed: {e}")
+        print(f"  ❌ Groq text extraction failed: {e}")
         return {field: None for field in fields}
 
 
@@ -339,7 +338,7 @@ def get_fields_to_extract() -> List[str]:
 def main():
     """Main execution function"""
     print("\n" + "=" * 80)
-    print("🚀 FILETRACT - MULTI-FILE OCR WITH GEMINI AI")
+    print("🚀 FILETRACT - MULTI-FILE OCR WITH GROQ AI")
     print("=" * 80)
     
     # Step 1: Get file paths
@@ -381,9 +380,9 @@ def main():
     
     print(f"\n✅ Will extract {len(fields)} field(s): {', '.join(fields)}")
     
-    # Step 4: Extract fields using Gemini API
+    # Step 4: Extract fields using Groq API
     print(f"\n{'=' * 80}")
-    print("🤖 EXTRACTING FIELDS USING GEMINI AI")
+    print("🤖 EXTRACTING FIELDS USING GROQ AI")
     print(f"{'=' * 80}")
     
     for file_path, text in extracted_texts.items():

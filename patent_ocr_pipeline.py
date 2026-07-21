@@ -3,7 +3,7 @@ FileTract - SOTA Patent-Eligible OCR Pipeline v3
 Parallel Vision + Self-Verification + Smart Preprocessing
 
 Patent-Pending Innovations:
-1. Parallel multi-strategy Gemini Vision extraction (ThreadPoolExecutor)
+1. Parallel multi-strategy Groq Vision extraction (ThreadPoolExecutor)
 2. Cross-strategy consensus voting with normalization
 3. Targeted self-verification loop for uncertain fields
 4. Document-type-aware context injection
@@ -29,7 +29,7 @@ import fitz  # PyMuPDF
 import pytesseract
 from pytesseract import Output
 from PIL import Image
-import google.generativeai as genai
+import groq_ocr_client as genai
 from dotenv import load_dotenv
 
 from sota_extraction_engine import SOTAExtractionEngine, SOTAResult
@@ -57,14 +57,14 @@ elif os.name == 'nt':
 else:
     pytesseract.pytesseract.tesseract_cmd = 'tesseract'
 
-# ─── Gemini configuration ─────────────────────────────────────────────────────
+# ─── Groq configuration ────────────────────────────────────────────────────────
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-if not GEMINI_API_KEY:
-    print("❌ GEMINI_API_KEY not found in .env")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+if not GROQ_API_KEY:
+    print("❌ GROQ_API_KEY not found in .env")
     sys.exit(1)
 
-genai.configure(api_key=GEMINI_API_KEY)
+genai.configure(api_key=GROQ_API_KEY)
 
 # ─── Image loading ────────────────────────────────────────────────────────────
 

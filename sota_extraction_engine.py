@@ -3,7 +3,7 @@ FileTract SOTA Extraction Engine
 Patent-Pending: Multi-Strategy Parallel Vision Extraction with Self-Verification
 
 Core innovations over prior art:
-1. Direct Gemini Vision extraction — no OCR error propagation (biggest accuracy win)
+1. Direct Groq Vision extraction — no OCR error propagation (biggest accuracy win)
 2. Parallel multi-strategy execution (ThreadPoolExecutor) — 3x speed improvement
 3. Cross-strategy consensus voting with normalization — catches hallucinations
 4. Targeted self-verification loop for uncertain/disagreed fields — catches remaining errors
@@ -18,7 +18,7 @@ from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass
 
 from PIL import Image
-import google.generativeai as genai
+import groq_ocr_client as genai
 
 
 @dataclass
@@ -55,11 +55,11 @@ _CONF_WEIGHTS = {'high': 1.0, 'medium': 0.7, 'low': 0.3}
 class SOTAExtractionEngine:
     """
     State-of-the-art document field extraction engine.
-    Replaces the Tesseract → annotated-text → Gemini pipeline with
+    Replaces the Tesseract → annotated-text → Groq pipeline with
     direct multimodal extraction, parallelism, and self-verification.
     """
 
-    def __init__(self, model_name: str = 'gemini-2.5-flash'):
+    def __init__(self, model_name: str = None):
         self.model = genai.GenerativeModel(
             model_name,
             generation_config=genai.types.GenerationConfig(
@@ -142,7 +142,7 @@ class SOTAExtractionEngine:
         return '\n'.join(hints)
 
     def _call(self, parts, timeout: int = 45) -> str:
-        """Single Gemini multimodal call, bounded so a stalled request fails fast instead of hanging."""
+        """Single Groq multimodal call, bounded so a stalled request fails fast instead of hanging."""
         return self.model.generate_content(
             parts, request_options={'timeout': timeout}
         ).text.strip()
@@ -150,7 +150,7 @@ class SOTAExtractionEngine:
     # ─── Document Type Detection ──────────────────────────────────────────
 
     def detect_document_type(self, pil_image: Image.Image) -> str:
-        """Ask Gemini to identify the document type for context injection."""
+        """Ask Groq to identify the document type for context injection."""
         prompt = (
             "What type of document is shown in this image?\n"
             "Reply with ONLY the document type. Examples:\n"
@@ -171,7 +171,7 @@ class SOTAExtractionEngine:
     ) -> StrategyResult:
         """
         Strategy A — Direct Vision.
-        Gemini reads the image as a human expert would.
+        Groq Vision reads the image as a human expert would.
         No OCR intermediary; no error propagation.
         """
         fields_list = ', '.join(fields)
@@ -212,7 +212,7 @@ JSON:"""
     ) -> StrategyResult:
         """
         Strategy B — Analytical Vision.
-        Different prompt framing than A: asks Gemini to reason field-by-field.
+        Different prompt framing than A: asks Groq to reason field-by-field.
         Cross-validates Strategy A results.
         """
         items = '\n'.join(f'{i+1}. {f}' for i, f in enumerate(fields))
@@ -255,7 +255,7 @@ Return ONLY JSON. No preamble, no markdown:"""
         """
         Strategy C — OCR-Assisted Vision.
         Passes both the raw OCR text and the image.
-        Gemini uses OCR as a spatial map and corrects errors by reading the image.
+        Groq Vision uses OCR as a spatial map and corrects errors by reading the image.
         Best for handling OCR character substitutions (0→O, 1→l, 5→S, etc.)
         """
         if not ocr_text or len(ocr_text.strip()) < 10:

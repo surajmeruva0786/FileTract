@@ -8,7 +8,7 @@ v3: Added vision-direct extraction method as primary path.
 
 import json
 import re
-import google.generativeai as genai
+import groq_ocr_client as genai
 from typing import List, Dict, Any, Optional
 from dataclasses import dataclass
 
@@ -31,12 +31,12 @@ class ConfidenceAwareLLM:
     Patent-eligible component: Confidence injection into LLM prompts.
     """
     
-    def __init__(self, model_name: str = 'gemini-2.5-flash'):
+    def __init__(self, model_name: str = None):
         """
         Initialize confidence-aware LLM extractor.
-        
+
         Args:
-            model_name: Gemini model to use
+            model_name: unused — kept for interface compatibility (see groq_ocr_client)
         """
         self.model = genai.GenerativeModel(model_name)
         self.low_confidence_threshold = 0.75
@@ -122,8 +122,8 @@ Now extract the fields and return the JSON:"""
         prompt = self.build_confidence_prompt(fused_regions, fields, annotated_text)
         
         try:
-            # Call Gemini API
-            print("  🤖 Sending confidence-aware request to Gemini API...")
+            # Call Groq API
+            print("  🤖 Sending confidence-aware request to Groq API...")
             response = self.model.generate_content(prompt)
             
             # Parse response
@@ -183,7 +183,7 @@ Now extract the fields and return the JSON:"""
             print(f"  Response: {response_text[:200]}...")
             return {field: FieldWithQuality(None, 0.0, 'low', 'error') for field in fields}
         except Exception as e:
-            print(f"  ❌ Error calling Gemini API: {e}")
+            print(f"  ❌ Error calling Groq API: {e}")
             return {field: FieldWithQuality(None, 0.0, 'low', 'error') for field in fields}
     
     def _find_ocr_confidence(self, value: str, fused_regions: List[FusedRegion]) -> float:

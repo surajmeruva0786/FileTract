@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-**FileTract** is a patent-pending AI document intelligence system. It extracts structured fields from scanned documents (PDFs, images) using a 5-stage confidence-weighted OCR pipeline powered by Tesseract OCR and Google Gemini 2.5 Flash.
+**FileTract** is a patent-pending AI document intelligence system. It extracts structured fields from scanned documents (PDFs, images) using a 5-stage confidence-weighted OCR pipeline powered by Tesseract OCR and Groq (Llama 4 Scout vision / Llama 3.3 70B text).
 
 **Repository:** https://github.com/surajmeruva0786/FileTract  
 **Patent Status:** Pending  
@@ -50,7 +50,7 @@ FileTract/
 ## Environment Variables
 
 ```bash
-GEMINI_API_KEY=your-gemini-api-key   # Required
+GROQ_API_KEY=your-groq-api-key         # Required
 PORT=5000                              # Optional (Render sets this)
 FLASK_ENV=production                   # Optional
 ```
@@ -58,6 +58,30 @@ FLASK_ENV=production                   # Optional
 ---
 
 ## Changelog
+
+### 2026-07-21 — Migrated LLM Provider from Gemini to Groq
+
+**What changed:**
+- User switched Render's env var from `GEMINI_API_KEY` to `GROQ_API_KEY` (already applied on the live service). Codebase updated to match.
+- **`groq_ocr_client.py`** (NEW) — drop-in shim mirroring the `google.generativeai` surface (`configure()`, `GenerativeModel`, `types.GenerationConfig`, `model.generate_content(parts).text`) but backed by Groq. Auto-routes to a vision model (`meta-llama/llama-4-scout-17b-16e-instruct`) when a `PIL.Image` is in the call, or a text model (`llama-3.3-70b-versatile`) otherwise. Written this way so the 3 call-site files below needed only an import swap, not a rewrite of their prompt/strategy logic.
+- **`gemini_ocr_extract.py`**, **`sota_extraction_engine.py`**, **`confidence_aware_llm.py`**, **`patent_ocr_pipeline.py`** — swapped `import google.generativeai as genai` → `import groq_ocr_client as genai`, `GEMINI_API_KEY` → `GROQ_API_KEY`, and updated user-facing log/comment text referencing "Gemini" to "Groq". `confidence_aware_llm.py`'s `ConfidenceAwareLLM` class is currently unused by the live pipeline (only its `FieldWithQuality` dataclass is imported elsewhere) but was migrated too so the module still imports cleanly.
+- **`requirements.txt`** — replaced `google-generativeai` with `groq`.
+- **`test_gemini.py` → `test_groq.py`** — renamed and rewritten to hit Groq via `GROQ_API_KEY` from `.env`. This file also had a **live Gemini API key hardcoded in source and committed to the public repo** — unrelated to this migration but a real secret leak; rewritten to read from env instead. **Action needed from you:** revoke that Gemini key in Google AI Studio regardless of this code fix (it's already in git history / on GitHub).
+- **`.env`** (local, gitignored) — swapped the `GEMINI_API_KEY` line for an empty `GROQ_API_KEY` line; fill in your key locally to run/test outside Render.
+
+**Why:** User's call — switched providers, backend env var already changed on Render before this fix landed, meaning the previously-deployed code would `sys.exit(1)` at import (`patent_ocr_pipeline.py` and `gemini_ocr_extract.py` both hard-exit if `GEMINI_API_KEY` is missing) as soon as Render restarted the service on the env var change.
+
+**Verified:** All 5 modules that touch the LLM (`gemini_ocr_extract`, `patent_ocr_pipeline`, `confidence_aware_llm`, `sota_extraction_engine`, `app`) import cleanly with `groq` installed and a dummy `GROQ_API_KEY` (structural check only — no real Groq call made locally, no local Groq key available in this session).
+
+**Files changed:**
+- `groq_ocr_client.py` (NEW)
+- `gemini_ocr_extract.py`, `sota_extraction_engine.py`, `confidence_aware_llm.py`, `patent_ocr_pipeline.py`
+- `requirements.txt`
+- `test_gemini.py` → `test_groq.py`
+- `.env` (local only, not committed)
+- `CLAUDE.md` (this file)
+
+---
 
 ### 2026-07-20 — Wired Mobile App to Live Backend (https://filetract.onrender.com)
 
