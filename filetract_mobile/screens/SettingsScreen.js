@@ -9,9 +9,9 @@ import {
   SafeAreaView,
   StatusBar,
   Alert,
-  Switch,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import {
   saveBackendUrl,
   getBackendUrl,
@@ -22,13 +22,27 @@ import {
 } from '../services/storage';
 import { saveSheetsUrl, getSheetsUrl } from '../services/googleSheets';
 import { setBackendUrl } from '../services/api';
+import GlowBackground from '../components/GlowBackground';
+import { colors, gradients, fonts } from '../theme';
+
+const SETUP_STEPS = [
+  'Open your Google Sheet.',
+  'Go to Extensions → Apps Script.',
+  'Paste the contents of filetract_mobile/google_apps_script/Code.gs.',
+  'Click Deploy → New Deployment.',
+  'Select type: Web App.',
+  'Set "Execute as": Me, "Who has access": Anyone.',
+  'Click Deploy and copy the Web App URL.',
+  'Paste it in the field above and save.',
+];
 
 export default function SettingsScreen({ navigation }) {
   const [backendUrl, setBackendUrlState] = useState('');
   const [sheetsUrl, setSheetsUrlState] = useState('');
   const [pipeline, setPipelineState] = useState('standard');
-  const [defaultFields, setDefaultFieldsState] = useState('');
-  const [saving, setSaving] = useState(false);
+  const [defaultFields, setDefaultFieldsState] = useState([]);
+  const [newField, setNewField] = useState('');
+  const [savingState, setSavingState] = useState('idle'); // idle | saving | saved
 
   useEffect(() => {
     (async () => {
@@ -39,12 +53,24 @@ export default function SettingsScreen({ navigation }) {
       setBackendUrlState(bUrl || '');
       setSheetsUrlState(sUrl || '');
       setPipelineState(pip);
-      setDefaultFieldsState(df.join(', '));
+      setDefaultFieldsState(df);
     })();
   }, []);
 
+  const addDefaultField = () => {
+    const trimmed = newField.trim();
+    if (trimmed && !defaultFields.includes(trimmed)) {
+      setDefaultFieldsState((prev) => [...prev, trimmed]);
+      setNewField('');
+    }
+  };
+
+  const removeDefaultField = (field) => {
+    setDefaultFieldsState((prev) => prev.filter((f) => f !== field));
+  };
+
   const save = async () => {
-    setSaving(true);
+    setSavingState('saving');
     try {
       if (backendUrl.trim()) {
         await saveBackendUrl(backendUrl.trim());
@@ -54,61 +80,51 @@ export default function SettingsScreen({ navigation }) {
         await saveSheetsUrl(sheetsUrl.trim());
       }
       await savePipeline(pipeline);
-      const fieldsArr = defaultFields
-        .split(',')
-        .map((f) => f.trim())
-        .filter(Boolean);
-      await saveDefaultFields(fieldsArr);
+      await saveDefaultFields(defaultFields);
 
-      Alert.alert('Saved', 'Settings have been saved successfully.');
+      setSavingState('saved');
+      setTimeout(() => setSavingState('idle'), 2200);
     } catch (err) {
+      setSavingState('idle');
       Alert.alert('Error', err.message);
-    } finally {
-      setSaving(false);
     }
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-      <ScrollView showsVerticalScrollIndicator={false}>
-        <View style={styles.headerRow}>
-          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
-            <Ionicons name="arrow-back" size={24} color={colors.accent} />
-          </TouchableOpacity>
-          <Text style={styles.title}>Settings</Text>
-        </View>
+    <View style={styles.root}>
+      <GlowBackground />
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={styles.headerRow}>
+            <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+              <Ionicons name="arrow-back" size={20} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.title}>Settings</Text>
+          </View>
 
-        {/* Backend Config */}
-        <Text style={styles.sectionLabel}>FileTract Backend</Text>
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Backend URL</Text>
+          <Text style={styles.fieldLabel}>Backend URL</Text>
           <TextInput
-            style={styles.input}
+            style={styles.monoInput}
             value={backendUrl}
             onChangeText={setBackendUrlState}
             placeholder="https://filetract.onrender.com"
-            placeholderTextColor={colors.textDim}
+            placeholderTextColor={colors.textGhost}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
           />
           <Text style={styles.hint}>
-            Defaults to https://filetract.onrender.com.{'\n'}
-            For local testing use your machine's LAN IP instead: http://192.168.x.x:5000
+            Defaults to https://filetract.onrender.com. For local testing use your machine's LAN IP instead: http://192.168.x.x:5000
           </Text>
-        </View>
 
-        {/* Google Sheets Config */}
-        <Text style={styles.sectionLabel}>Google Sheets Integration</Text>
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Apps Script Web App URL</Text>
+          <Text style={[styles.fieldLabel, { marginTop: 22 }]}>Export Destination URL</Text>
           <TextInput
-            style={styles.input}
+            style={styles.monoInput}
             value={sheetsUrl}
             onChangeText={setSheetsUrlState}
             placeholder="https://script.google.com/macros/s/..."
-            placeholderTextColor={colors.textDim}
+            placeholderTextColor={colors.textGhost}
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="url"
@@ -116,187 +132,244 @@ export default function SettingsScreen({ navigation }) {
           <Text style={styles.hint}>
             Deploy the included Google Apps Script (google_apps_script/Code.gs) and paste the Web App URL here.
           </Text>
-        </View>
 
-        {/* Pipeline Default */}
-        <Text style={styles.sectionLabel}>Default Pipeline</Text>
-        <View style={styles.card}>
-          <View style={styles.pipelineRow}>
-            <TouchableOpacity
-              style={[styles.pipelineBtn, pipeline === 'standard' && styles.pipelineBtnActive]}
-              onPress={() => setPipelineState('standard')}
-            >
-              <Ionicons
-                name="flash"
-                size={18}
-                color={pipeline === 'standard' ? colors.background : colors.textDim}
-              />
-              <Text
-                style={[styles.pipelineBtnText, pipeline === 'standard' && styles.pipelineBtnTextActive]}
-              >
-                Standard (Fast)
-              </Text>
+          <Text style={[styles.fieldLabel, { marginTop: 22 }]}>Default Processing Mode</Text>
+          <View style={styles.segmentRow}>
+            <TouchableOpacity style={styles.segmentTouchable} onPress={() => setPipelineState('standard')}>
+              {pipeline === 'standard' ? (
+                <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.segmentBtn}>
+                  <Ionicons name="flash" size={15} color="#fff" />
+                  <Text style={styles.segmentTextActive}>Fast</Text>
+                </LinearGradient>
+              ) : (
+                <View style={styles.segmentBtn}>
+                  <Ionicons name="flash-outline" size={15} color="rgba(255,255,255,0.5)" />
+                  <Text style={styles.segmentText}>Fast</Text>
+                </View>
+              )}
             </TouchableOpacity>
-            <TouchableOpacity
-              style={[styles.pipelineBtn, pipeline === 'patent' && styles.pipelineBtnActive]}
-              onPress={() => setPipelineState('patent')}
-            >
-              <Ionicons
-                name="shield-checkmark"
-                size={18}
-                color={pipeline === 'patent' ? colors.background : colors.accent}
-              />
-              <Text
-                style={[styles.pipelineBtnText, pipeline === 'patent' && styles.pipelineBtnTextActive]}
-              >
-                Patent (Accurate)
-              </Text>
+            <TouchableOpacity style={styles.segmentTouchable} onPress={() => setPipelineState('patent')}>
+              {pipeline === 'patent' ? (
+                <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.segmentBtn}>
+                  <Ionicons name="shield-checkmark" size={15} color="#fff" />
+                  <Text style={styles.segmentTextActive}>Accurate</Text>
+                </LinearGradient>
+              ) : (
+                <View style={styles.segmentBtn}>
+                  <Ionicons name="shield-checkmark-outline" size={15} color="rgba(255,255,255,0.5)" />
+                  <Text style={styles.segmentText}>Accurate</Text>
+                </View>
+              )}
             </TouchableOpacity>
           </View>
-        </View>
 
-        {/* Default Fields */}
-        <Text style={styles.sectionLabel}>Default Fields</Text>
-        <View style={styles.card}>
-          <Text style={styles.cardLabel}>Pre-filled field list (comma-separated)</Text>
-          <TextInput
-            style={[styles.input, { minHeight: 80 }]}
-            value={defaultFields}
-            onChangeText={setDefaultFieldsState}
-            placeholder="Name, ID Number, Date of Birth, Expiry Date"
-            placeholderTextColor={colors.textDim}
-            multiline
-          />
-        </View>
-
-        {/* How to set up Google Sheets */}
-        <Text style={styles.sectionLabel}>Google Sheets Setup Guide</Text>
-        <View style={styles.card}>
-          {[
-            'Open your Google Sheet.',
-            'Go to Extensions → Apps Script.',
-            'Paste the contents of filetract_mobile/google_apps_script/Code.gs.',
-            'Click Deploy → New Deployment.',
-            'Select type: Web App.',
-            'Set "Execute as": Me, "Who has access": Anyone.',
-            'Click Deploy and copy the Web App URL.',
-            'Paste it in the field above and save.',
-          ].map((step, i) => (
-            <View key={i} style={styles.stepRow}>
-              <View style={styles.stepNum}>
-                <Text style={styles.stepNumText}>{i + 1}</Text>
+          <Text style={[styles.fieldLabel, { marginTop: 22 }]}>Default Fields</Text>
+          <View style={styles.fieldsContainer}>
+            {defaultFields.map((field) => (
+              <View key={field} style={styles.fieldChip}>
+                <Text style={styles.fieldChipText}>{field}</Text>
+                <TouchableOpacity onPress={() => removeDefaultField(field)}>
+                  <Ionicons name="close" size={13} color="rgba(255,255,255,0.6)" />
+                </TouchableOpacity>
               </View>
-              <Text style={styles.stepText}>{step}</Text>
-            </View>
-          ))}
-        </View>
+            ))}
+          </View>
+          <View style={styles.addFieldRow}>
+            <TextInput
+              style={styles.fieldInput}
+              placeholder="Add a default field…"
+              placeholderTextColor={colors.textGhost}
+              value={newField}
+              onChangeText={setNewField}
+              onSubmitEditing={addDefaultField}
+              returnKeyType="done"
+            />
+            <TouchableOpacity onPress={addDefaultField}>
+              <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.addBtn}>
+                <Ionicons name="add" size={20} color="#fff" />
+              </LinearGradient>
+            </TouchableOpacity>
+          </View>
 
-        <TouchableOpacity style={styles.saveBtn} onPress={save} disabled={saving}>
-          <Text style={styles.saveBtnText}>{saving ? 'Saving...' : 'Save Settings'}</Text>
-        </TouchableOpacity>
+          <Text style={[styles.fieldLabel, { marginTop: 26 }]}>Google Sheets Setup Guide</Text>
+          <View style={styles.card}>
+            {SETUP_STEPS.map((step, i) => (
+              <View key={i} style={styles.stepRow}>
+                <View style={styles.stepNum}>
+                  <Text style={styles.stepNumText}>{i + 1}</Text>
+                </View>
+                <Text style={styles.stepText}>{step}</Text>
+              </View>
+            ))}
+          </View>
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
-    </SafeAreaView>
+          <TouchableOpacity activeOpacity={0.85} onPress={save} disabled={savingState === 'saving'} style={{ marginTop: 26, marginHorizontal: 22 }}>
+            <LinearGradient
+              colors={savingState === 'saved' ? gradients.success : gradients.primary}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.saveBtn}
+            >
+              {savingState === 'saved' && <Ionicons name="checkmark" size={17} color="#fff" />}
+              <Text style={styles.saveBtnText}>
+                {savingState === 'saving' ? 'Saving…' : savingState === 'saved' ? 'Saved' : 'Save Changes'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
+
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
-const colors = {
-  background: '#0a0a12',
-  surface: '#12121e',
-  accent: '#00e5ff',
-  accentGlow: '#00e5ff22',
-  text: '#e8e8f0',
-  textDim: '#666680',
-  border: '#1e1e2e',
-};
-
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  container: {
+    flex: 1,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 10,
-    gap: 12,
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 8,
+    gap: 14,
   },
-  backBtn: { padding: 4 },
-  title: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: colors.text,
-  },
-  sectionLabel: {
-    color: colors.textDim,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-    marginTop: 24,
-    marginBottom: 10,
-    paddingHorizontal: 20,
-  },
-  card: {
-    marginHorizontal: 20,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
+  backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
     borderColor: colors.border,
-    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  cardLabel: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '600',
+  title: {
+    fontFamily: fonts.displaySemi,
+    fontSize: 19,
+    color: colors.text,
+  },
+  fieldLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 12.5,
+    color: 'rgba(255,255,255,0.6)',
+    marginTop: 22,
     marginBottom: 8,
+    paddingHorizontal: 22,
   },
-  input: {
-    backgroundColor: colors.background,
-    borderRadius: 10,
+  monoInput: {
+    fontFamily: fonts.mono,
+    marginHorizontal: 22,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 13,
+    color: colors.text,
+    fontSize: 12.5,
+  },
+  hint: {
+    fontFamily: fonts.body,
+    marginHorizontal: 22,
+    marginTop: 8,
+    color: colors.textFaint,
+    fontSize: 11,
+    lineHeight: 17,
+  },
+  segmentRow: {
+    flexDirection: 'row',
+    gap: 4,
+    marginHorizontal: 22,
+    padding: 4,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255,255,255,0.05)',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  segmentTouchable: {
+    flex: 1,
+  },
+  segmentBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingVertical: 10,
+    borderRadius: 999,
+  },
+  segmentText: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 13.5,
+    color: 'rgba(255,255,255,0.5)',
+  },
+  segmentTextActive: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 13.5,
+    color: '#fff',
+  },
+  fieldsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 9,
+    paddingHorizontal: 22,
+  },
+  fieldChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingLeft: 14,
+    paddingRight: 8,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: colors.chip,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  fieldChipText: {
+    fontFamily: fonts.body,
+    color: 'rgba(255,255,255,0.85)',
+    fontSize: 13.5,
+  },
+  addFieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginHorizontal: 22,
+    marginTop: 12,
+    gap: 9,
+  },
+  fieldInput: {
+    flex: 1,
+    fontFamily: fonts.body,
+    backgroundColor: colors.surface,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: colors.border,
     color: colors.text,
     paddingHorizontal: 14,
     paddingVertical: 11,
-    fontSize: 13,
-    textAlignVertical: 'top',
+    fontSize: 13.5,
   },
-  hint: {
-    color: colors.textDim,
-    fontSize: 11,
-    marginTop: 8,
-    lineHeight: 17,
-  },
-  pipelineRow: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  pipelineBtn: {
-    flex: 1,
-    flexDirection: 'row',
+  addBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: 12,
     alignItems: 'center',
-    gap: 8,
-    padding: 12,
-    borderRadius: 10,
-    backgroundColor: colors.background,
+    justifyContent: 'center',
+  },
+  card: {
+    marginHorizontal: 22,
+    backgroundColor: colors.surface,
+    borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
-  },
-  pipelineBtnActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
-  },
-  pipelineBtnText: {
-    color: colors.textDim,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  pipelineBtnTextActive: {
-    color: colors.background,
+    padding: 16,
   },
   stepRow: {
     flexDirection: 'row',
@@ -308,35 +381,36 @@ const styles = StyleSheet.create({
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: colors.accentGlow,
+    backgroundColor: 'rgba(167,139,250,0.12)',
     borderWidth: 1,
-    borderColor: colors.accent + '44',
+    borderColor: 'rgba(167,139,250,0.28)',
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: 1,
   },
   stepNumText: {
-    color: colors.accent,
+    fontFamily: fonts.bodyBold,
+    color: colors.violet,
     fontSize: 11,
-    fontWeight: '800',
   },
   stepText: {
+    fontFamily: fonts.body,
     color: colors.text,
     fontSize: 13,
     lineHeight: 20,
     flex: 1,
   },
   saveBtn: {
-    backgroundColor: colors.accent,
-    marginHorizontal: 20,
-    marginTop: 28,
-    paddingVertical: 18,
-    borderRadius: 14,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    paddingVertical: 16,
+    borderRadius: 16,
   },
   saveBtnText: {
-    color: colors.background,
-    fontSize: 16,
-    fontWeight: '800',
+    fontFamily: fonts.bodySemi,
+    color: '#fff',
+    fontSize: 15.5,
   },
 });

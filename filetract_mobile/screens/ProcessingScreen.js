@@ -4,21 +4,30 @@ import {
   Text,
   StyleSheet,
   Animated,
+  Easing,
   SafeAreaView,
   StatusBar,
   TouchableOpacity,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { processImage } from '../services/api';
+import { LinearGradient } from 'expo-linear-gradient';
+import { processImage, setBackendUrl } from '../services/api';
 import { getBackendUrl as getStoredUrl } from '../services/storage';
-import { setBackendUrl } from '../services/api';
+import GlowBackground from '../components/GlowBackground';
+import { colors, gradients, fonts } from '../theme';
 
-const STAGES = [
-  { id: 1, label: 'Uploading Image', icon: 'cloud-upload' },
-  { id: 2, label: 'Baseline OCR', icon: 'scan' },
-  { id: 3, label: 'Confidence Analysis', icon: 'analytics' },
-  { id: 4, label: 'Adaptive Re-OCR', icon: 'refresh-circle' },
-  { id: 5, label: 'AI Field Extraction', icon: 'sparkles' },
+// Real stage counts/semantics match app.py's actual pipelines (see CLAUDE.md
+// 2026-07-01 SOTA v3.0 entry): patent = 5-stage SOTA pipeline, standard = 2 phases.
+const ACCURATE_STAGES = [
+  { id: 1, label: 'Preprocessing Image', icon: 'scan' },
+  { id: 2, label: 'Detecting Document Type', icon: 'search' },
+  { id: 3, label: 'Running OCR Extraction', icon: 'layers' },
+  { id: 4, label: 'Cross-Checking Fields', icon: 'shield-checkmark' },
+  { id: 5, label: 'Scoring Confidence', icon: 'analytics' },
+];
+const FAST_STAGES = [
+  { id: 1, label: 'Uploading & Preprocessing', icon: 'cloud-upload' },
+  { id: 2, label: 'Extracting Fields', icon: 'sparkles' },
 ];
 
 export default function ProcessingScreen({ navigation, route }) {
@@ -26,18 +35,26 @@ export default function ProcessingScreen({ navigation, route }) {
   const [currentStage, setCurrentStage] = useState(0);
   const [error, setError] = useState(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const stageCount = pipeline === 'patent' ? 5 : 2;
+  const spinAnim = useRef(new Animated.Value(0)).current;
+
+  const stageList = pipeline === 'patent' ? ACCURATE_STAGES : FAST_STAGES;
 
   useEffect(() => {
-    // Pulse animation
     const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.15, duration: 800, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1.08, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 900, easing: Easing.inOut(Easing.ease), useNativeDriver: true }),
       ])
     );
     pulse.start();
-    return () => pulse.stop();
+    const spin = Animated.loop(
+      Animated.timing(spinAnim, { toValue: 1, duration: 1400, easing: Easing.linear, useNativeDriver: true })
+    );
+    spin.start();
+    return () => {
+      pulse.stop();
+      spin.stop();
+    };
   }, []);
 
   useEffect(() => {
@@ -46,7 +63,6 @@ export default function ProcessingScreen({ navigation, route }) {
 
   const run = async () => {
     try {
-      // Apply stored backend URL if set
       const storedUrl = await getStoredUrl();
       if (storedUrl) setBackendUrl(storedUrl);
 
@@ -60,104 +76,105 @@ export default function ProcessingScreen({ navigation, route }) {
     }
   };
 
-  const stageList = pipeline === 'patent' ? STAGES : STAGES.slice(0, 2);
+  const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ['0deg', '360deg'] });
 
   if (error) {
     return (
-      <SafeAreaView style={styles.container}>
-        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
-        <View style={styles.errorBox}>
-          <Ionicons name="warning" size={48} color="#ff4444" />
-          <Text style={styles.errorTitle}>Processing Failed</Text>
-          <Text style={styles.errorMsg}>{error}</Text>
-          <TouchableOpacity style={styles.retryBtn} onPress={() => { setError(null); run(); }}>
-            <Text style={styles.retryBtnText}>Retry</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.backLink} onPress={() => navigation.goBack()}>
-            <Text style={styles.backLinkText}>Go Back</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+      <View style={styles.root}>
+        <GlowBackground />
+        <SafeAreaView style={styles.container}>
+          <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+          <View style={styles.errorBox}>
+            <View style={styles.errorIconWrap}>
+              <Ionicons name="warning" size={36} color={colors.danger} />
+            </View>
+            <Text style={styles.errorTitle}>Extraction Failed</Text>
+            <Text style={styles.errorMsg}>{error}</Text>
+            <View style={styles.errorActions}>
+              <TouchableOpacity activeOpacity={0.85} onPress={() => { setError(null); setCurrentStage(0); run(); }}>
+                <LinearGradient colors={gradients.primary} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.retryBtn}>
+                  <Ionicons name="refresh" size={16} color="#fff" />
+                  <Text style={styles.retryBtnText}>Try Again</Text>
+                </LinearGradient>
+              </TouchableOpacity>
+              <TouchableOpacity style={styles.backLink} onPress={() => navigation.goBack()}>
+                <Text style={styles.backLinkText}>Back to Fields</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </View>
     );
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+    <View style={styles.root}>
+      <GlowBackground />
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
-      <View style={styles.center}>
-        <Animated.View style={[styles.orb, { transform: [{ scale: pulseAnim }] }]}>
-          <Ionicons name="scan" size={48} color={colors.accent} />
-        </Animated.View>
+        <View style={styles.center}>
+          <Text style={styles.eyebrow}>Extracting Document</Text>
 
-        <Text style={styles.processingTitle}>Extracting Fields</Text>
-        <Text style={styles.processingSubtitle}>
-          {pipeline === 'patent' ? 'Patent Pipeline — 5 stages' : 'Standard Pipeline'}
-        </Text>
+          <View style={styles.orbWrap}>
+            <Animated.View style={[styles.spinRing, { transform: [{ rotate: spin }] }]} />
+            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+              <LinearGradient colors={gradients.orb} style={styles.orb}>
+                <Ionicons name="scan" size={32} color="#fff" />
+              </LinearGradient>
+            </Animated.View>
+          </View>
 
-        <View style={styles.stageList}>
-          {stageList.map((stage) => {
-            const done = currentStage > stage.id;
-            const active = currentStage === stage.id;
-            return (
-              <View key={stage.id} style={styles.stageRow}>
-                <View
-                  style={[
-                    styles.stageIcon,
-                    done && styles.stageIconDone,
-                    active && styles.stageIconActive,
-                  ]}
-                >
-                  {done ? (
-                    <Ionicons name="checkmark" size={16} color={colors.background} />
-                  ) : (
-                    <Ionicons
-                      name={stage.icon}
-                      size={16}
-                      color={active ? colors.background : colors.textDim}
-                    />
-                  )}
+          <View style={styles.stageList}>
+            {stageList.map((stage, idx) => {
+              const done = currentStage > stage.id;
+              const active = currentStage === stage.id;
+              const isLast = idx === stageList.length - 1;
+              return (
+                <View key={stage.id} style={styles.stageRow}>
+                  <View style={styles.stageIconCol}>
+                    {done || active ? (
+                      <LinearGradient
+                        colors={done ? gradients.orb : gradients.primary}
+                        style={styles.stageIcon}
+                      >
+                        <Ionicons name={done ? 'checkmark' : stage.icon} size={18} color="#fff" />
+                      </LinearGradient>
+                    ) : (
+                      <View style={[styles.stageIcon, styles.stageIconPending]}>
+                        <Ionicons name={stage.icon} size={17} color="rgba(255,255,255,0.35)" />
+                      </View>
+                    )}
+                    {!isLast && (
+                      <View style={[styles.connector, done && styles.connectorDone]} />
+                    )}
+                  </View>
+                  <View style={styles.stageTextCol}>
+                    <Text style={[styles.stageLabel, (done || active) && styles.stageLabelActive]}>
+                      {stage.label}
+                    </Text>
+                    {active && <Text style={styles.stageStatus}>In progress…</Text>}
+                    {done && <Text style={styles.stageStatus}>Done</Text>}
+                  </View>
                 </View>
-                <Text
-                  style={[
-                    styles.stageLabel,
-                    done && styles.stageLabelDone,
-                    active && styles.stageLabelActive,
-                  ]}
-                >
-                  {stage.label}
-                </Text>
-                {active && (
-                  <View style={styles.activeDot} />
-                )}
-              </View>
-            );
-          })}
-        </View>
+              );
+            })}
+          </View>
 
-        <Text style={styles.fieldsHint}>
-          Extracting: {fields.join(' • ')}
-        </Text>
-      </View>
-    </SafeAreaView>
+          <Text style={styles.fieldsHint}>Extracting: {fields.join(' • ')}</Text>
+        </View>
+      </SafeAreaView>
+    </View>
   );
 }
 
-const colors = {
-  background: '#0a0a12',
-  surface: '#12121e',
-  accent: '#00e5ff',
-  accentGlow: '#00e5ff22',
-  text: '#e8e8f0',
-  textDim: '#666680',
-  border: '#1e1e2e',
-  success: '#00ff88',
-};
-
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  container: {
+    flex: 1,
   },
   center: {
     flex: 1,
@@ -165,81 +182,97 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingHorizontal: 32,
   },
-  orb: {
-    width: 110,
-    height: 110,
-    borderRadius: 55,
-    backgroundColor: colors.accentGlow,
-    borderWidth: 1.5,
-    borderColor: colors.accent + '66',
+  eyebrow: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 11,
+    letterSpacing: 2,
+    textTransform: 'uppercase',
+    color: colors.violet,
+    marginBottom: 30,
+  },
+  orbWrap: {
+    width: 96,
+    height: 96,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 32,
+    marginBottom: 36,
   },
-  processingTitle: {
-    fontSize: 26,
-    fontWeight: '800',
-    color: colors.text,
-    marginBottom: 8,
+  spinRing: {
+    position: 'absolute',
+    width: 96,
+    height: 96,
+    borderRadius: 48,
+    borderWidth: 2.5,
+    borderColor: 'transparent',
+    borderTopColor: colors.violet,
+    borderRightColor: colors.violet,
   },
-  processingSubtitle: {
-    fontSize: 13,
-    color: colors.textDim,
-    marginBottom: 40,
-    letterSpacing: 0.5,
+  orb: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   stageList: {
     width: '100%',
-    gap: 14,
-    marginBottom: 40,
+    maxWidth: 320,
+    marginBottom: 30,
   },
   stageRow: {
     flexDirection: 'row',
+    gap: 16,
+  },
+  stageIconCol: {
     alignItems: 'center',
-    gap: 12,
   },
   stageIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: colors.surface,
-    borderWidth: 1,
-    borderColor: colors.border,
+    width: 40,
+    height: 40,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  stageIconDone: {
-    backgroundColor: colors.success,
-    borderColor: colors.success,
+  stageIconPending: {
+    backgroundColor: 'rgba(255,255,255,0.06)',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
-  stageIconActive: {
-    backgroundColor: colors.accent,
-    borderColor: colors.accent,
+  connector: {
+    width: 2,
+    flex: 1,
+    minHeight: 16,
+    marginVertical: 2,
+    backgroundColor: colors.border,
   },
-  stageLabel: {
-    color: colors.textDim,
-    fontSize: 14,
-    fontWeight: '600',
+  connectorDone: {
+    backgroundColor: colors.violetDeep,
+  },
+  stageTextCol: {
+    paddingTop: 8,
+    paddingBottom: 18,
     flex: 1,
   },
-  stageLabelDone: {
-    color: colors.success,
+  stageLabel: {
+    fontFamily: fonts.bodySemi,
+    fontSize: 14.5,
+    color: 'rgba(255,255,255,0.4)',
   },
   stageLabelActive: {
-    color: colors.text,
-    fontWeight: '700',
+    color: '#fff',
   },
-  activeDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: colors.accent,
+  stageStatus: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: 'rgba(167,139,250,0.75)',
+    marginTop: 2,
   },
   fieldsHint: {
+    fontFamily: fonts.body,
     fontSize: 11,
-    color: colors.textDim,
+    color: colors.textFaint,
     textAlign: 'center',
-    letterSpacing: 0.5,
+    letterSpacing: 0.3,
   },
   errorBox: {
     flex: 1,
@@ -248,34 +281,55 @@ const styles = StyleSheet.create({
     paddingHorizontal: 32,
     gap: 16,
   },
+  errorIconWrap: {
+    width: 84,
+    height: 84,
+    borderRadius: 42,
+    backgroundColor: 'rgba(239,68,68,0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(239,68,68,0.25)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   errorTitle: {
-    fontSize: 22,
-    fontWeight: '800',
-    color: '#ff4444',
+    fontFamily: fonts.display,
+    fontSize: 20,
+    color: colors.text,
   },
   errorMsg: {
-    fontSize: 14,
+    fontFamily: fonts.body,
+    fontSize: 13.5,
     color: colors.textDim,
     textAlign: 'center',
     lineHeight: 22,
+    maxWidth: 280,
   },
-  retryBtn: {
-    backgroundColor: colors.accent,
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
+  errorActions: {
+    width: '100%',
+    maxWidth: 280,
+    gap: 10,
     marginTop: 8,
   },
+  retryBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 9,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
   retryBtnText: {
-    color: colors.background,
-    fontSize: 16,
-    fontWeight: '800',
+    fontFamily: fonts.bodySemi,
+    color: '#fff',
+    fontSize: 14.5,
   },
   backLink: {
-    padding: 8,
+    padding: 12,
+    alignItems: 'center',
   },
   backLinkText: {
+    fontFamily: fonts.bodyMedium,
     color: colors.textDim,
-    fontSize: 14,
+    fontSize: 13.5,
   },
 });

@@ -1,17 +1,26 @@
 import React from 'react';
+import { View } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useFonts } from 'expo-font';
 
 import HomeScreen from './screens/HomeScreen';
 import FieldsScreen from './screens/FieldsScreen';
 import ProcessingScreen from './screens/ProcessingScreen';
 import PreviewScreen from './screens/PreviewScreen';
 import SettingsScreen from './screens/SettingsScreen';
+import { colors, fontAssets } from './theme';
 
 const Stack = createStackNavigator();
 
 export default function App() {
+  const [fontsLoaded] = useFonts(fontAssets);
+
+  if (!fontsLoaded) {
+    return <View style={{ flex: 1, backgroundColor: colors.background }} />;
+  }
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <NavigationContainer>
@@ -19,7 +28,7 @@ export default function App() {
           initialRouteName="Home"
           screenOptions={{
             headerShown: false,
-            cardStyle: { backgroundColor: '#0a0a12' },
+            cardStyle: { backgroundColor: colors.background },
             animationEnabled: true,
           }}
         >

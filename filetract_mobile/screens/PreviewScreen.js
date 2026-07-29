@@ -13,9 +13,12 @@ import {
   ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import { sendToGoogleSheets } from '../services/googleSheets';
+import GlowBackground from '../components/GlowBackground';
+import { colors, gradients, fonts, qualityBadge } from '../theme';
 
-function parseResults(results, pipeline) {
+function parseResults(results) {
   // Patent pipeline format
   if (results?.results?.extracted_fields) {
     return Object.entries(results.results.extracted_fields).map(([field, data]) => ({
@@ -37,16 +40,9 @@ function parseResults(results, pipeline) {
   return [];
 }
 
-const QUALITY_COLORS = {
-  reliable: '#00ff88',
-  good: '#00e5ff',
-  uncertain: '#ffaa00',
-  'low-quality': '#ff4444',
-};
-
 export default function PreviewScreen({ navigation, route }) {
   const { image, fields, results, pipeline } = route.params;
-  const [extractedFields, setExtractedFields] = useState(() => parseResults(results, pipeline));
+  const [extractedFields, setExtractedFields] = useState(() => parseResults(results));
   const [editingIdx, setEditingIdx] = useState(null);
   const [editValue, setEditValue] = useState('');
   const [sending, setSending] = useState(false);
@@ -74,11 +70,7 @@ export default function PreviewScreen({ navigation, route }) {
       });
       await sendToGoogleSheets({ results: flatData }, image.fileName || 'id_card.jpg');
       setSent(true);
-      Alert.alert(
-        'Exported!',
-        'Data has been successfully added to your Google Sheet.',
-        [{ text: 'OK' }]
-      );
+      setTimeout(() => setSent(false), 2600);
     } catch (err) {
       Alert.alert('Export Failed', err.message, [
         { text: 'Go to Settings', onPress: () => navigation.navigate('Settings') },
@@ -92,252 +84,229 @@ export default function PreviewScreen({ navigation, route }) {
   const qualityReport = results?.results?.quality_report || null;
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" backgroundColor={colors.background} />
+    <View style={styles.root}>
+      <GlowBackground />
+      <SafeAreaView style={styles.container}>
+        <StatusBar barStyle="light-content" backgroundColor={colors.background} />
 
-      {/* Header */}
-      <View style={styles.headerRow}>
-        <TouchableOpacity onPress={() => navigation.navigate('Home')} style={styles.backBtn}>
-          <Ionicons name="home" size={22} color={colors.accent} />
-        </TouchableOpacity>
-        <Text style={styles.title}>Extraction Results</Text>
-        <View style={styles.successBadge}>
-          <Ionicons name="checkmark-circle" size={14} color={colors.success} />
-          <Text style={styles.successBadgeText}>Complete</Text>
-        </View>
-      </View>
-
-      <ScrollView showsVerticalScrollIndicator={false}>
-        {/* Image Thumbnail */}
-        <View style={styles.imageRow}>
-          <Image source={{ uri: image.uri }} style={styles.thumbnail} resizeMode="cover" />
-          <View style={styles.imageMeta}>
-            <Text style={styles.imageLabel}>{image.fileName || 'ID Card'}</Text>
-            <Text style={styles.pipelineTag}>
-              {pipeline === 'patent' ? 'Patent Pipeline' : 'Standard Pipeline'}
+        <View style={styles.headerRow}>
+          <TouchableOpacity onPress={() => navigation.goBack()} style={styles.backBtn}>
+            <Ionicons name="arrow-back" size={20} color="#fff" />
+          </TouchableOpacity>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.title}>Extracted Fields</Text>
+            <Text style={styles.subtitle}>
+              {pipeline === 'patent' ? 'Patent Pipeline' : 'Standard Pipeline'} · Just now
             </Text>
-            {qualityReport && (
-              <Text style={styles.qualityLine}>
-                Overall: {qualityReport.overall_quality} •{' '}
-                {qualityReport.reliable_fields}/{qualityReport.total_fields} reliable
-              </Text>
+          </View>
+          <LinearGradient colors={gradients.orb} style={styles.headerIcon}>
+            <Ionicons name="document-text" size={22} color="#fff" />
+          </LinearGradient>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false}>
+          <View style={styles.imageRow}>
+            <Image source={{ uri: image.uri }} style={styles.thumbnail} resizeMode="cover" />
+            <View style={styles.imageMeta}>
+              <Text style={styles.imageLabel} numberOfLines={1}>{image.fileName || 'ID Card'}</Text>
+              {qualityReport && (
+                <Text style={styles.qualityLine}>
+                  Overall: {qualityReport.overall_quality} · {qualityReport.reliable_fields}/{qualityReport.total_fields} reliable
+                </Text>
+              )}
+            </View>
+          </View>
+
+          <View style={styles.fieldsCard}>
+            {extractedFields.length === 0 ? (
+              <Text style={styles.emptyText}>No fields extracted. Try again with a clearer image.</Text>
+            ) : (
+              extractedFields.map(({ field, value, confidence, quality }, idx) => {
+                const badge = qualityBadge(quality);
+                return (
+                  <View key={field} style={[styles.fieldRow, idx > 0 && styles.fieldRowDivider]}>
+                    <View style={styles.fieldMetaRow}>
+                      <Text style={styles.fieldLabel}>{field}</Text>
+                      {badge && (
+                        <View style={[styles.badge, { backgroundColor: badge.bg }]}>
+                          <Text style={[styles.badgeText, { color: badge.color }]}>{badge.label}</Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {editingIdx === idx ? (
+                      <TextInput
+                        style={styles.editInput}
+                        value={editValue}
+                        onChangeText={setEditValue}
+                        autoFocus
+                        returnKeyType="done"
+                        onSubmitEditing={saveEdit}
+                        onBlur={saveEdit}
+                      />
+                    ) : (
+                      <TouchableOpacity style={styles.valueRow} onPress={() => startEdit(idx)}>
+                        <Text style={styles.fieldValue}>{value || '—'}</Text>
+                        <Ionicons name="pencil-outline" size={14} color="rgba(255,255,255,0.3)" />
+                      </TouchableOpacity>
+                    )}
+
+                    {confidence !== null && (
+                      <View style={styles.confBar}>
+                        <View style={[styles.confFill, { width: `${Math.round(confidence * 100)}%` }]} />
+                        <Text style={styles.confText}>{Math.round(confidence * 100)}% OCR</Text>
+                      </View>
+                    )}
+                  </View>
+                );
+              })
             )}
           </View>
-        </View>
 
-        {/* Extracted Fields */}
-        <Text style={styles.sectionLabel}>Extracted Fields</Text>
-        <View style={styles.fieldsCard}>
-          {extractedFields.length === 0 ? (
-            <Text style={styles.emptyText}>No fields extracted. Try again with a clearer image.</Text>
-          ) : (
-            extractedFields.map(({ field, value, confidence, quality }, idx) => (
-              <View key={field} style={styles.fieldRow}>
-                <View style={styles.fieldMeta}>
-                  <Text style={styles.fieldLabel}>{field}</Text>
-                  {quality && (
-                    <View
-                      style={[
-                        styles.qualityDot,
-                        { backgroundColor: QUALITY_COLORS[quality] || colors.textDim },
-                      ]}
-                    />
-                  )}
-                </View>
+          <TouchableOpacity activeOpacity={0.85} onPress={handleExportToSheets} disabled={sending} style={styles.exportWrap}>
+            <LinearGradient
+              colors={sent ? gradients.success : gradients.primary}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 0 }}
+              style={styles.exportBtn}
+            >
+              {sending ? (
+                <ActivityIndicator color="#fff" />
+              ) : sent ? (
+                <Ionicons name="checkmark" size={18} color="#fff" />
+              ) : (
+                <Ionicons name="logo-google" size={18} color="#fff" />
+              )}
+              <Text style={styles.exportBtnText}>
+                {sending ? 'Sending…' : sent ? 'Sent to Google Sheets' : 'Send to Google Sheets'}
+              </Text>
+            </LinearGradient>
+          </TouchableOpacity>
 
-                {editingIdx === idx ? (
-                  <View style={styles.editRow}>
-                    <TextInput
-                      style={styles.editInput}
-                      value={editValue}
-                      onChangeText={setEditValue}
-                      autoFocus
-                      returnKeyType="done"
-                      onSubmitEditing={saveEdit}
-                    />
-                    <TouchableOpacity style={styles.saveBtn} onPress={saveEdit}>
-                      <Ionicons name="checkmark" size={18} color={colors.background} />
-                    </TouchableOpacity>
-                  </View>
-                ) : (
-                  <TouchableOpacity style={styles.valueRow} onLongPress={() => startEdit(idx)}>
-                    <Text style={styles.fieldValue}>{value || '—'}</Text>
-                    <TouchableOpacity onPress={() => startEdit(idx)}>
-                      <Ionicons name="pencil" size={16} color={colors.textDim} />
-                    </TouchableOpacity>
-                  </TouchableOpacity>
-                )}
+          <Text style={styles.editHint}>Tap any field to edit its value before exporting.</Text>
 
-                {confidence !== null && (
-                  <View style={styles.confBar}>
-                    <View style={[styles.confFill, { width: `${Math.round(confidence * 100)}%` }]} />
-                    <Text style={styles.confText}>{Math.round(confidence * 100)}% OCR</Text>
-                  </View>
-                )}
+          <TouchableOpacity style={styles.newScanBtn} onPress={() => navigation.navigate('Home')}>
+            <Ionicons name="scan-outline" size={17} color={colors.violet} />
+            <Text style={styles.newScanText}>Scan Another Document</Text>
+          </TouchableOpacity>
 
-                {idx < extractedFields.length - 1 && <View style={styles.divider} />}
-              </View>
-            ))
-          )}
-        </View>
-
-        {/* Export Actions */}
-        <Text style={styles.sectionLabel}>Export</Text>
-
-        <TouchableOpacity
-          style={[styles.exportBtn, sent && styles.exportBtnDone]}
-          onPress={handleExportToSheets}
-          disabled={sending || sent}
-        >
-          {sending ? (
-            <ActivityIndicator color={colors.background} />
-          ) : sent ? (
-            <Ionicons name="checkmark-circle" size={22} color={colors.background} />
-          ) : (
-            <Ionicons name="logo-google" size={22} color={colors.background} />
-          )}
-          <Text style={styles.exportBtnText}>
-            {sent ? 'Sent to Google Sheets' : 'Export to Google Sheets'}
-          </Text>
-        </TouchableOpacity>
-
-        <Text style={styles.editHint}>Tip: Long-press or tap the pencil icon to edit any field before exporting.</Text>
-
-        <TouchableOpacity
-          style={styles.newScanBtn}
-          onPress={() => navigation.navigate('Home')}
-        >
-          <Ionicons name="scan" size={20} color={colors.accent} />
-          <Text style={styles.newScanText}>Scan Another Document</Text>
-        </TouchableOpacity>
-
-        <View style={{ height: 40 }} />
-      </ScrollView>
-    </SafeAreaView>
+          <View style={{ height: 40 }} />
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
-const colors = {
-  background: '#0a0a12',
-  surface: '#12121e',
-  accent: '#00e5ff',
-  accentGlow: '#00e5ff22',
-  text: '#e8e8f0',
-  textDim: '#666680',
-  border: '#1e1e2e',
-  success: '#00ff88',
-};
-
 const styles = StyleSheet.create({
-  container: {
+  root: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  container: {
+    flex: 1,
   },
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingTop: 20,
-    paddingBottom: 10,
-    gap: 12,
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 18,
+    gap: 14,
   },
-  backBtn: { padding: 4 },
-  title: {
-    fontSize: 20,
-    fontWeight: '800',
-    color: colors.text,
-    flex: 1,
-  },
-  successBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  backBtn: {
+    width: 38,
+    height: 38,
     borderRadius: 12,
-    backgroundColor: colors.success + '22',
+    backgroundColor: 'rgba(255,255,255,0.06)',
     borderWidth: 1,
-    borderColor: colors.success + '44',
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  successBadgeText: {
-    color: colors.success,
-    fontSize: 11,
-    fontWeight: '700',
+  title: {
+    fontFamily: fonts.displaySemi,
+    fontSize: 19,
+    color: colors.text,
+  },
+  subtitle: {
+    fontFamily: fonts.body,
+    fontSize: 12,
+    color: colors.textFaint,
+    marginTop: 2,
+  },
+  headerIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 13,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   imageRow: {
     flexDirection: 'row',
     gap: 14,
-    marginHorizontal: 20,
-    marginTop: 16,
+    marginHorizontal: 22,
     padding: 14,
     backgroundColor: colors.surface,
     borderRadius: 14,
     borderWidth: 1,
     borderColor: colors.border,
+    alignItems: 'center',
   },
   thumbnail: {
-    width: 80,
-    height: 60,
+    width: 64,
+    height: 48,
     borderRadius: 8,
   },
   imageMeta: {
     flex: 1,
-    justifyContent: 'center',
     gap: 4,
   },
   imageLabel: {
+    fontFamily: fonts.bodyBold,
     color: colors.text,
     fontSize: 13,
-    fontWeight: '700',
-  },
-  pipelineTag: {
-    color: colors.accent,
-    fontSize: 11,
-    fontWeight: '600',
   },
   qualityLine: {
-    color: colors.textDim,
+    fontFamily: fonts.body,
+    color: colors.textFaint,
     fontSize: 11,
-  },
-  sectionLabel: {
-    color: colors.textDim,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1.5,
-    textTransform: 'uppercase',
-    marginTop: 24,
-    marginBottom: 10,
-    paddingHorizontal: 20,
   },
   fieldsCard: {
-    marginHorizontal: 20,
-    backgroundColor: colors.surface,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
+    marginHorizontal: 22,
+    marginTop: 20,
+    gap: 10,
   },
   fieldRow: {
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 16,
+    padding: 14,
   },
-  fieldMeta: {
+  fieldRowDivider: {},
+  fieldMetaRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 6,
+    justifyContent: 'space-between',
+    marginBottom: 8,
   },
   fieldLabel: {
-    color: colors.textDim,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 1,
+    fontFamily: fonts.bodySemi,
+    fontSize: 12,
+    color: colors.textFaint,
     textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
-  qualityDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+  badge: {
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  badgeText: {
+    fontFamily: fonts.bodyBold,
+    fontSize: 10.5,
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
   },
   valueRow: {
     flexDirection: 'row',
@@ -346,84 +315,68 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   fieldValue: {
+    fontFamily: fonts.bodyMedium,
     color: colors.text,
-    fontSize: 16,
-    fontWeight: '600',
+    fontSize: 15.5,
     flex: 1,
-  },
-  editRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
   },
   editInput: {
-    flex: 1,
-    backgroundColor: colors.background,
-    color: colors.text,
-    borderRadius: 8,
+    fontFamily: fonts.body,
+    backgroundColor: '#1F1832',
     borderWidth: 1,
-    borderColor: colors.accent,
-    paddingHorizontal: 12,
+    borderColor: colors.violet,
+    borderRadius: 8,
+    paddingHorizontal: 10,
     paddingVertical: 8,
+    color: colors.text,
     fontSize: 15,
   },
-  saveBtn: {
-    backgroundColor: colors.accent,
-    borderRadius: 8,
-    padding: 8,
-  },
   confBar: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 8,
+    marginTop: 10,
     height: 4,
     backgroundColor: colors.border,
     borderRadius: 2,
-    gap: 8,
     overflow: 'hidden',
   },
   confFill: {
     height: 4,
-    backgroundColor: colors.accent + '88',
+    backgroundColor: colors.violet,
     borderRadius: 2,
   },
   confText: {
-    color: colors.textDim,
+    fontFamily: fonts.body,
+    color: colors.textFaint,
     fontSize: 10,
-    position: 'absolute',
-    right: 0,
-  },
-  divider: {
-    height: 1,
-    backgroundColor: colors.border,
-    marginTop: 14,
+    marginTop: 4,
+    textAlign: 'right',
   },
   emptyText: {
+    fontFamily: fonts.body,
     color: colors.textDim,
     fontSize: 14,
     textAlign: 'center',
     padding: 24,
   },
+  exportWrap: {
+    marginHorizontal: 22,
+    marginTop: 22,
+  },
   exportBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 12,
-    backgroundColor: '#4CAF50',
-    marginHorizontal: 20,
-    paddingVertical: 18,
-    borderRadius: 14,
-  },
-  exportBtnDone: {
-    backgroundColor: colors.success,
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 16,
   },
   exportBtnText: {
-    color: colors.background,
-    fontSize: 16,
-    fontWeight: '800',
+    fontFamily: fonts.bodySemi,
+    color: '#fff',
+    fontSize: 15.5,
   },
   editHint: {
-    color: colors.textDim,
+    fontFamily: fonts.body,
+    color: colors.textFaint,
     fontSize: 11,
     textAlign: 'center',
     marginTop: 10,
@@ -433,17 +386,17 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 10,
-    marginHorizontal: 20,
+    gap: 9,
+    marginHorizontal: 22,
     marginTop: 16,
-    paddingVertical: 16,
+    paddingVertical: 15,
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: colors.accent,
+    borderColor: colors.borderStrong,
   },
   newScanText: {
-    color: colors.accent,
-    fontSize: 15,
-    fontWeight: '700',
+    fontFamily: fonts.bodySemi,
+    color: colors.violet,
+    fontSize: 14.5,
   },
 });

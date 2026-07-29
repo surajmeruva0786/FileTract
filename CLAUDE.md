@@ -59,6 +59,35 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-29 — Rebuilt Mobile App UI from the Claude-Designed Mockup (FileTract-app-frontend)
+
+**What changed:**
+- User tested the previous APK and pointed out the app didn't match "the frontend I designed" — turned out `FileTract-app-frontend/` (committed 2026-07-20 in `39036af upload mobile app frontend`) is a fully-specified interactive design mockup (`FileTract.dc.html` + `android-frame.jsx` + supporting JS) exported from a Claude design tool, spec'ing all 5 screens (Home, Configure Extraction, Processing, Extracted Fields, Settings) in a dark violet/indigo "AI intelligence" visual language. It had never actually been read or implemented — every prior mobile session (2026-06-29 through 2026-07-21) only ever touched the original placeholder screens (cyan-on-black theme, generic copy), so the shipped APK never reflected this design at all. (Separately, `filetract_frontend/` — the other frontend-looking folder — is unrelated: its `metadata.json` identifies it as "Flash UI," a generic Google AI Studio/Gemini demo scaffold present since the very first commit, not a FileTract design and not something built in any of these sessions.)
+- **`filetract_mobile/theme.js`** (NEW) — shared color palette (`#0C0714` background, `#6366F1`→`#7C3AED` primary gradient, `#A78BFA` violet accent, etc.), gradient presets, and font-family constants ported directly from the mockup's inline styles.
+- **`filetract_mobile/components/GlowBackground.js`** (NEW) — reusable ambient background (two soft violet/indigo glow circles) approximating the mockup's layered radial-gradients without pulling in `react-native-svg` just for a decoration.
+- **`filetract_mobile/App.js`** — loads Instrument Sans / DM Sans / JetBrains Mono via `expo-font`'s `useFonts` before rendering the navigator (blank dark screen shown until ready); card background switched to the new theme color.
+- **`filetract_mobile/screens/{Home,Fields,Processing,Preview,Settings}Screen.js`** — full visual rewrite to match the mockup screen-for-screen: gradient CTA buttons (`expo-linear-gradient`), pill-style chips/tags, segmented Fast/Accurate mode switch, step-by-step processing checklist with connectors and checkmarks, card-based field list with quality badges, gradient Save/Export buttons with saving/sent states. All real logic is unchanged — camera/gallery picking, the actual `pipeline` (standard/patent) values sent to the backend, `processImage`/stage-callback wiring, real result parsing (patent vs standard field shapes, OCR confidence, quality flags), Google Sheets export, and AsyncStorage-backed settings are untouched, only re-skinned.
+- Two intentional deviations from the raw mockup, made to keep the screens truthful to what the app actually does (the mockup was built with static demo data, not the real backend):
+  - **Processing step labels/counts** now reflect the real pipeline (patent = 5 backend-reported stages: Preprocessing Image, Detecting Document Type, Running OCR Extraction, Cross-Checking Fields, Scoring Confidence — matching the actual SOTA v3.0 architecture from the 2026-07-01 entry; standard = 2 real stages) rather than the mockup's generic 3/6-step fake timeline.
+  - **Document type presets** kept the existing real Aadhaar/PAN/Voter ID/Student ID/Driver License/Custom set (restyled to the new chip look) instead of the mockup's placeholder ID Card/Passport/License/Custom set, since the real presets are what the product actually targets.
+  - Dropped the mockup's "by ORBIS SYSTEMS" credit line — that name doesn't appear anywhere else in this project (owner is `surajmeruva0786`) and looks like placeholder branding from the design tool, not real attribution.
+- **`filetract_mobile/package.json`** — added `expo-linear-gradient`, `@expo-google-fonts/dm-sans`, `@expo-google-fonts/instrument-sans`, `@expo-google-fonts/jetbrains-mono` (all installed via `npx expo install` for SDK 51-correct versions).
+- Kicked off a new cloud build: `eas build --platform android --profile preview --non-interactive`.
+
+**Why:** User's explicit ask — the app they downloaded and tested didn't match the design they'd created, and they wanted the actual designed frontend wired up before testing again.
+
+**Verified:** `npx expo-doctor` → 17/17 checks pass. `npx expo export --platform android` → bundles cleanly (1020 modules, no errors). Not yet tested on a physical device — user will install the new build and confirm.
+
+**Files changed:**
+- `filetract_mobile/theme.js` (NEW)
+- `filetract_mobile/components/GlowBackground.js` (NEW)
+- `filetract_mobile/App.js`
+- `filetract_mobile/screens/HomeScreen.js`, `FieldsScreen.js`, `ProcessingScreen.js`, `PreviewScreen.js`, `SettingsScreen.js`
+- `filetract_mobile/package.json`, `filetract_mobile/package-lock.json`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-29 — Confirmed First EAS Cloud Build Finished (Installable APK Ready)
 
 **What changed:**
