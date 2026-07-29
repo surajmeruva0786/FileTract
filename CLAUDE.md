@@ -59,6 +59,26 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-29 — Confirmed First EAS Cloud Build Finished (Installable APK Ready)
+
+**What changed:**
+- No code changes. Checked `eas build:list` and found the cloud build kicked off in the 2026-07-21 entry below had actually completed — that entry was written mid-build and left the result unconfirmed.
+- Build `8f124880-6dfd-4ebe-9d65-ec0b06ff1e3d` (profile `preview`, Android, SDK 51, commit `47e8bce`) finished 2026-07-22 ~2:31am.
+- Direct APK download: https://expo.dev/artifacts/eas/32sB5U76AF-PbbdkhiplPZQqazB8vlYLIu34r0-TjfQ.apk
+
+**Why:** User asked for a progress update on the mobile app; the last changelog entry was stale on this exact point (build "in progress... not yet confirmed"), so it needed correcting rather than repeating.
+
+**Still not done (unchanged from prior entries):**
+- APK not yet installed/tested on a physical device or emulator.
+- Icon/splash assets are still placeholder solid-color squares.
+- Google Sheets Apps Script Web App still needs to be deployed by the user.
+- Patent pipeline's `strategies_used: []` / `consensus_rate: 0` issue (noted 2026-07-20) hasn't been re-verified since the Groq migration.
+
+**Files changed:**
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-21 — Set Up EAS Build Pipeline for Mobile App APK
 
 **What changed:**
