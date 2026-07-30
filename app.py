@@ -143,20 +143,33 @@ def process_job_async(job_id: str, file_path: str, fields: List[str], pipeline: 
             jobs[job_id]['current_stage'] = 1
 
             ext = os.path.splitext(file_path)[1].lower()
-            if ext == '.pdf':
-                text = extract_text_from_pdf(file_path)
-                image_path_for_vision = None  # PDF: vision handled inside gemini_ocr_extract
-            else:
-                text = extract_text_from_image(file_path)
-                image_path_for_vision = file_path  # Pass image for Vision extraction
+            is_pdf = ext == '.pdf'
+            image_path_for_vision = None if is_pdf else file_path  # PDF: vision handled inside gemini_ocr_extract
 
             jobs[job_id]['current_stage'] = 2
 
-            # Use Vision when image is available (dramatically better accuracy)
-            extracted_data = _run_with_timeout(
-                extract_fields_with_gemini, (text, fields, image_path_for_vision), STANDARD_PIPELINE_TIMEOUT
-            )
-            
+            # Tesseract text is only ever used as a fallback if Vision fails (or for
+            # PDFs, which have no direct-image Vision path) — running it upfront on
+            # every request wasted 1-4s of Tesseract OCR on the critical path for
+            # zero benefit whenever Vision succeeds, which is the common case. Try
+            # Vision first with no text; only pay for Tesseract if that fails.
+            if is_pdf:
+                text = extract_text_from_pdf(file_path)
+                extracted_data = _run_with_timeout(
+                    extract_fields_with_gemini, (text, fields, None), STANDARD_PIPELINE_TIMEOUT
+                )
+            else:
+                try:
+                    extracted_data = _run_with_timeout(
+                        extract_fields_with_gemini, ('', fields, image_path_for_vision), STANDARD_PIPELINE_TIMEOUT
+                    )
+                except Exception as vision_err:
+                    print(f"Vision-first standard extraction failed ({vision_err}), retrying with OCR text")
+                    text = extract_text_from_image(file_path)
+                    extracted_data = _run_with_timeout(
+                        extract_fields_with_gemini, (text, fields, image_path_for_vision), STANDARD_PIPELINE_TIMEOUT
+                    )
+
             # Save results
             result_path = os.path.join(RESULTS_FOLDER, f"{job_id}_results.json")
             with open(result_path, 'w', encoding='utf-8') as f:
