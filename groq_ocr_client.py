@@ -49,25 +49,14 @@ class _Response:
         self.text = text
 
 
-# Longest side to send to the vision model. Phone photos routinely come in at
-# 3000-4000px+; that's far more resolution than printed document text needs to
-# stay legible, and every extra pixel adds upload time plus image-token
-# processing time on Groq's side. Raised from an initial 1600 to 2048 after a
-# user-reported accuracy regression — 1600 risked shrinking small print below
-# legible size on uncropped phone photos where the document doesn't fill the
-# frame. 2048 is a more conservative trade: still a real payload/latency win
-# over full-resolution, with more margin for small text to stay readable.
-_MAX_VISION_DIMENSION = 2048
-
-
+# Sending images to Groq Vision at full resolution, unmodified. An earlier
+# session tried downscaling to speed up requests (1600px, then 2048px) but it
+# measurably hurt extraction accuracy on real phone photos — small print was
+# landing below legible size — so per user direction this was reverted back
+# to full-resolution, matching the pipeline's original (better) behavior.
 def _to_data_url(image: "_PILImage.Image") -> str:
-    image = image.convert("RGB")
-    if max(image.size) > _MAX_VISION_DIMENSION:
-        scale = _MAX_VISION_DIMENSION / max(image.size)
-        new_size = (round(image.width * scale), round(image.height * scale))
-        image = image.resize(new_size, _PILImage.LANCZOS)
     buf = io.BytesIO()
-    image.save(buf, format="JPEG", quality=88)
+    image.convert("RGB").save(buf, format="JPEG", quality=92)
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
     return f"data:image/jpeg;base64,{b64}"
 
