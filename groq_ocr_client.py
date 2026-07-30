@@ -52,9 +52,12 @@ class _Response:
 # Longest side to send to the vision model. Phone photos routinely come in at
 # 3000-4000px+; that's far more resolution than printed document text needs to
 # stay legible, and every extra pixel adds upload time plus image-token
-# processing time on Groq's side. 1600px keeps text sharp while cutting typical
-# payload size (and latency) several times over versus sending full-resolution.
-_MAX_VISION_DIMENSION = 1600
+# processing time on Groq's side. Raised from an initial 1600 to 2048 after a
+# user-reported accuracy regression — 1600 risked shrinking small print below
+# legible size on uncropped phone photos where the document doesn't fill the
+# frame. 2048 is a more conservative trade: still a real payload/latency win
+# over full-resolution, with more margin for small text to stay readable.
+_MAX_VISION_DIMENSION = 2048
 
 
 def _to_data_url(image: "_PILImage.Image") -> str:

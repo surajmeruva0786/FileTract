@@ -90,6 +90,29 @@ FLASK_ENV=production                   # Optional
 
 ---
 
+### 2026-07-30 (follow-up, same day) — Live Diagnosis: Deploy Lag + Groq Now Failing 100% of Calls
+
+**What changed:**
+- User reported the above fixes hadn't visibly changed anything (Fast still ~15s, patent still returning empty values, and Fast accuracy had *regressed* vs. an earlier successful test) and asked me to actually verify rather than assume.
+- Ran live end-to-end tests directly against `https://filetract.onrender.com` using `certif_img1.png` (591×882px) for both pipelines, twice each, several minutes apart:
+  - **Standard/Fast pipeline**: succeeded both times with fully correct values for all 4 fields (Name, Father Name, School, Date of Birth) — but took **~40-45 seconds**, far worse than even the user's reported "15s," and far worse than the "~5s" target.
+  - **Patent/Accurate pipeline**: failed completely both times — `strategies_used: []`, every field `null`/`quality_flag: "not-found"`, `document_type: "Document"` (the exception fallback value), meaning **every single Groq call failed, including the trivially cheap doc-type-detection call** — yet job status was `"complete"`, not `"error"`.
+- **That last point is the smoking gun**: the `sota_extraction_engine.py` fix earlier today explicitly raises when all strategies fail, which should have produced an `"error"` status (or triggered the patent→standard fallback in `app.py`). Getting `"complete"` with silent nulls instead means **the live Render service had not deployed the newer commits yet** at the time of testing — this session has no Render API/CLI access to confirm or force a redeploy, or to read Render's server logs directly.
+- **Separately, and more concerning**: every Groq call failing 100% of the time — including the cheapest possible call (one-line document-type classification) — doesn't look like ordinary per-minute rate-limiting (which usually degrades partially, not totally). It's more consistent with an account-level problem: an invalid/revoked `GROQ_API_KEY` on Render, an exhausted daily/monthly quota, or the preview vision model (`meta-llama/llama-4-scout-17b-16e-instruct`, set up 2026-07-21) having been deprecated or renamed by Groq. **This cannot be diagnosed further without either a live Groq key or Render's server logs** (both outside this session's access) — the actual exception text our `print()` calls emit (e.g. "Vision extraction failed (...)") would appear in Render's log stream and should make the real cause obvious immediately.
+- **`groq_ocr_client.py`** — raised `_MAX_VISION_DIMENSION` from 1600 → 2048px as a precaution against the user's reported Fast-pipeline accuracy regression: 1600px risked shrinking small print below legible size on uncropped phone photos where the document doesn't fill the frame (the local test image was far below either threshold, so it couldn't confirm or rule out this specific risk). 2048 keeps a meaningful size/latency win over full-resolution while leaving more margin for legibility.
+
+**Why:** User pushed back that nothing seemed fixed and specifically asked for real verification instead of assumed fixes — this entry documents what that verification actually found, including a real blocker (deploy visibility) this session cannot resolve alone.
+
+**Action needed from the user (I have no access to either):**
+1. Check Render's dashboard → this service → **Events/Deploys** tab: confirm commit `d990858` (or later) has actually deployed; manually trigger "Deploy latest commit" if it's stuck or auto-deploy is off.
+2. Pull up Render's **live logs** during a test run and paste back the actual printed error (search for "Vision extraction failed", "Groq text extraction failed", or "SOTA") — that message will say definitively whether this is rate-limiting, an auth/key problem, or a deprecated model, which determines what (if anything) is fixable in code versus needing a Groq dashboard/plan change.
+
+**Files changed:**
+- `groq_ocr_client.py`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-29 — Rebuilt Mobile App UI from the Claude-Designed Mockup (FileTract-app-frontend)
 
 **What changed:**
