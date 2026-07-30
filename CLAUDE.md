@@ -72,11 +72,11 @@ FLASK_ENV=production                   # Optional
   - **Document type presets** kept the existing real Aadhaar/PAN/Voter ID/Student ID/Driver License/Custom set (restyled to the new chip look) instead of the mockup's placeholder ID Card/Passport/License/Custom set, since the real presets are what the product actually targets.
   - Dropped the mockup's "by ORBIS SYSTEMS" credit line — that name doesn't appear anywhere else in this project (owner is `surajmeruva0786`) and looks like placeholder branding from the design tool, not real attribution.
 - **`filetract_mobile/package.json`** — added `expo-linear-gradient`, `@expo-google-fonts/dm-sans`, `@expo-google-fonts/instrument-sans`, `@expo-google-fonts/jetbrains-mono` (all installed via `npx expo install` for SDK 51-correct versions).
-- Kicked off a new cloud build: `eas build --platform android --profile preview --non-interactive`.
+- Kicked off a new cloud build: `eas build --platform android --profile preview --non-interactive`. Build `6c6ec330-df20-4fbb-a90f-38d746593bed` sat `IN_QUEUE` for an extended period (consistent with the 2026-07-21 build, which also queued for hours) before finishing successfully. APK: https://expo.dev/artifacts/eas/qLc2_NZAdmsyKTVTQkZIP2bruGutEpFkSLM4IBLhJ6U.apk
 
 **Why:** User's explicit ask — the app they downloaded and tested didn't match the design they'd created, and they wanted the actual designed frontend wired up before testing again.
 
-**Verified:** `npx expo-doctor` → 17/17 checks pass. `npx expo export --platform android` → bundles cleanly (1020 modules, no errors). Not yet tested on a physical device — user will install the new build and confirm.
+**Verified:** `npx expo-doctor` → 17/17 checks pass. `npx expo export --platform android` → bundles cleanly (1020 modules, no errors). Cloud build completed successfully. Not yet installed on a physical device — user is downloading this APK to test now.
 
 **Files changed:**
 - `filetract_mobile/theme.js` (NEW)
