@@ -59,6 +59,44 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-30 (fourth follow-up, same day) — Planned: Fast Pipeline Hardening + On-Device LLM Feasibility Assessment (Plan Only, No Code Changed)
+
+**Ask:** User wants two things investigated: (1) make the Fast/standard pipeline the best-in-world for speed *and* accuracy using only existing, proven techniques — explicitly no novel/bespoke engineering; and (2) an assessment of moving the backend and LLM onto the mobile device itself (a small model running on phone hardware) to escape Render free-tier slowness. Explicitly requested a plan only this round, documented and pushed, with no implementation yet.
+
+**Diagnosis of the current ~40-52s Fast-pipeline latency (grounded in the actual deployed config, not assumption):**
+Most likely **not** the Groq model itself — Groq's LPU hardware is built for very fast inference, and Llama 4 Maverick has repeatedly returned fully correct output whenever it's actually reached. The real contributors, in likely order of impact:
+1. **Render free-tier cold starts** — `render.yaml` has `plan: free`; free instances spin down after ~15 min idle, and every test after a gap pays a cold-boot tax before Flask even receives the request. This matches the "server restarts observed mid-test" note from earlier today.
+2. **Single sync gunicorn worker** — `Dockerfile`'s `CMD gunicorn app:app --bind 0.0.0.0:$PORT` has no `--workers`/`--threads`/worker-class flag, so gunicorn defaults to exactly 1 sync worker. A single in-flight Groq call blocks the entire process — `/api/health` checks, status polling, and any second concurrent job all queue behind it.
+3. **Full-resolution image payload** — reverted to full-res JPEG q92 in the second follow-up entry above after downscaling measurably hurt accuracy. Full-res phone photos (3000-4000px+) base64-encode to large payloads: more upload time off Render's bandwidth-constrained free instance, and more vision tokens for Maverick to process. Real latency cost, but **not being touched** without an explicit user go-ahead, since two out of two prior downscale attempts (1600px, then 2048px) regressed extraction accuracy.
+4. Minor: the 2s status-polling cadence in `filetract_mobile/services/api.js` (`pollUntilComplete`) only adds up to 2s of tail latency after the job has actually finished — negligible next to the above.
+
+**Planned changes — Fast pipeline track (existing, proven fixes only; not yet applied):**
+- `Dockerfile` — switch the gunicorn invocation to a threaded worker class (`--worker-class gthread --workers 1 --threads 4 --timeout 120`) so the one free-tier instance can serve `/api/health` and a second concurrent request without queuing behind an in-flight Groq call. Deliberately kept to 1 worker process (not more) to respect the free tier's limited RAM — threads share memory, extra processes don't.
+- `render.yaml` — fix the stale `GEMINI_API_KEY` env var entry to `GROQ_API_KEY` (a known inconsistency flagged since the 2026-07-21 migration entry; harmless today since Render doesn't re-read Blueprints on every push, but wrong if the service is ever reprovisioned from this file).
+- Recommended, needs the user's Render dashboard (not fixable from code): an external keep-alive ping (e.g. a free UptimeRobot or cron-job.org monitor hitting `/api/health` every ~10 min) to stop the free-tier instance from spinning down between real usage — a standard, zero-cost, well-known workaround for this specific Render tier, not a novel technique.
+- Recommended, needs the user's decision (cost implication): upgrading the Render service from `free` to the `Starter` plan (~$7/mo) is the single highest-impact fix available — it removes cold starts entirely and gives a dedicated (non-shared) CPU. This likely accounts for more of the observed 40-52s than anything fixable in application code, and no in-code change can substitute for it.
+- **Deliberately not changing:** `VISION_MODEL` (Llama 4 Maverick), JSON response mode, the Vision-first/Tesseract-skip flow, and the 1-retry cap — all already reflect current best practice for this pipeline's shape (single-call VLM extraction, structured JSON output, minimal retry) and were verified working correctly in the three sessions immediately above this one.
+- **Flagged but not planned:** a smaller, more conservative downscale ceiling than the two previously-tried values (e.g. only resize if the longest side exceeds ~3500px, well above typical phone-photo framing) is technically available to recover some upload/token cost without touching normal-sized photos — but given the track record, this needs an explicit go-ahead and a controlled before/after accuracy check, not a default part of this pass.
+
+**On-device LLM / on-device backend feasibility — assessed in detail, recommended against as a replacement:**
+- Technically possible in principle via mobile LLM runtimes — `llama.rn` (llama.cpp bindings), Google's MediaPipe LLM Inference API, MLC-LLM, or ExecuTorch — running a small quantized model (e.g. Gemma 2 2B, Phi-3-mini, or a small vision-capable model like Moondream2 1.9B / SmolVLM / Qwen2-VL-2B) directly on the phone, with no backend server at all.
+- **Blocking issue 1 — accuracy regression that directly contradicts the stated goal.** The best on-device-feasible vision models today are 1-8B parameters. Groq is currently serving Llama 4 Maverick (400B total / 17B active, 128-expert MoE) for this exact pipeline. That's a very large real capability gap specifically for OCR/handwriting/document field extraction — moving on-device would very likely make the Fast pipeline noticeably *less* accurate, not more, which is the opposite of what was asked.
+- **Blocking issue 2 — the mobile app is Expo *managed* workflow.** `filetract_mobile/package.json` confirms plain Expo SDK 51 dependencies, no `expo-dev-client`, no checked-in native android/ios project. Every on-device LLM runtime requires native modules, so this would first require ejecting to bare workflow (or adding `expo-dev-client` + a config plugin) — a real, separate migration with its own risk, before any model-integration work could even start.
+- **Blocking issue 3 — device constraints.** Model weights (0.5-4GB+ depending on quantization) would need to ship inside the app or be downloaded on first run (storage + wifi requirement, poor first-run UX); comfortable inference needs roughly 3GB+ free RAM, excluding a meaningful share of real-world budget/mid-range Android devices; CPU-only inference on low/mid-end phones can easily end up *slower* than a cloud round-trip anyway, plus real battery/thermal cost per extraction.
+- **Recommendation: do not replace the cloud LLM with an on-device model for the primary pipeline.** The actual root cause diagnosed above (Render free-tier cold starts + a single gunicorn worker) is fixable with small, cheap, well-understood infra changes (paid plan + keep-alive ping). On-device LLM migration would trade that fixable problem for a much harder, lower-accuracy, higher-maintenance one, for a worse outcome against the user's own stated bar ("best, fastest, most accurate").
+- **Middle-ground option, offered but not started:** on-device OCR only (no LLM) via Google ML Kit Text Recognition v2 — mature, free, fully on-device, fast, and accurate on printed text — could produce an instant rough local preview while the accurate cloud (Groq) extraction runs in the background. This keeps the accuracy-critical extraction step in the cloud, uses only existing/mature tooling (consistent with "no novelty, use existing"), and has existing Expo config-plugin wrappers so it wouldn't require as invasive an eject as a full LLM runtime would. Not started — offered as an option pending the user's interest, not assumed.
+
+**Status: plan only.** No application code, `Dockerfile`, `render.yaml`, or any file under `filetract_mobile/` has been modified in this pass. This entry exists to document the plan per the project rule (log before committing); next step is the user's go-ahead on which specific pieces — gunicorn worker/thread fix, Render plan upgrade, keep-alive ping, the bounded image-downscale experiment, and/or the ML Kit local-preview hybrid — to actually implement.
+
+**Files that will be touched once approved (none touched yet):**
+- `Dockerfile` (gunicorn worker/thread flags)
+- `render.yaml` (env var name fix)
+- Possibly `groq_ocr_client.py` (only if the user approves a bounded downscale experiment, with an explicit accuracy check)
+- Possibly `filetract_mobile/` (only if the user approves the ML Kit local-preview hybrid — would need new native/config-plugin work)
+- `CLAUDE.md` (this entry)
+
+---
+
 ### 2026-07-30 (third follow-up, same day) — Upgraded Vision Model + Found & Fixed a Real Dead-Code Bug in the SOTA Engine
 
 **What changed:**
