@@ -59,6 +59,37 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-30 (third follow-up, same day) — Upgraded Vision Model + Found & Fixed a Real Dead-Code Bug in the SOTA Engine
+
+**What changed:**
+- User asked for the best possible accuracy/robustness on the Fast pipeline, explicitly comparing quality to "the Google thing" (Gemini) and asking not to introduce anything novel/risky — just make it as good and reliable as possible.
+- **`groq_ocr_client.py`** — `VISION_MODEL` upgraded from Llama 4 **Scout** (`meta-llama/llama-4-scout-17b-16e-instruct`, 16 experts) to Llama 4 **Maverick** (`meta-llama/llama-4-maverick-17b-128e-instruct`, 128 experts) — Meta's larger, more capable multimodal model and the strongest vision option Groq currently offers. This affects both pipelines (they share the same client).
+- **`groq_ocr_client.py`** — added an opt-in `json_mode` to `generate_content()` that sets Groq's `response_format={"type": "json_object"}`, guaranteeing syntactically valid JSON back instead of relying on regex/markdown-fence cleanup of free-form text (a real, if occasional, source of parse failures). Wired into every JSON-expecting call in `gemini_ocr_extract.py` and `sota_extraction_engine.py` — explicitly left off `detect_document_type`, which expects a plain one-line string, not JSON.
+- **Found a real bug while verifying live** (not a deploy-lag issue this time — an actual logic error): the "raise if all strategies failed" fix from earlier today checked `if not strategy_results` (is the list empty), but `_strategy_vision_primary`/`_strategy_vision_analytical`/`_strategy_ocr_assisted` each catch their *own* exceptions internally and return a `StrategyResult(success=False, ...)` rather than raising — so `fut.result()` never throws, and the list is **virtually never empty**, even when every single strategy failed. That check was dead code from the moment it was written. **`sota_extraction_engine.py`** now checks `if not any(r.success for r in strategy_results)` instead, and includes each strategy's captured error message in the raised exception so the real underlying failure is finally visible (previously it was swallowed entirely, invisible even in logs). Also added error logging to `detect_document_type`'s except block (was a bare `except: return "Document"` with no visibility at all).
+
+**Live verification against `https://filetract.onrender.com`** (using `certif_img1.png`, repeated after each push, server restarts observed mid-test confirming redeploys were landing):
+- **Standard/Fast pipeline**: succeeded with fully correct values for all 4 fields (Name, Father Name, School, Date of Birth) on Maverick + JSON mode — no errors, no empty fields. Still slow (~45-52s observed), well above the ~5s target; see the note below.
+- **Patent/Accurate pipeline**: with the dead-code bug fixed, this pipeline's SOTA multi-strategy path *still* fails on every call observed — `strategies_used: []`, every field null, and now (with the fix) that correctly triggers `app.py`'s patent→standard fallback, which **succeeded with fully correct values** via a single Vision call. So end-to-end, Accurate mode currently produces correct results, but by silently falling back to Fast-pipeline-style single-call extraction rather than actually running its 5-stage consensus pipeline. The mobile app has no visibility into this fallback happening (`app.py`'s in-memory result branch doesn't return the `'warning'` key it sets — a minor transparency gap, not fixed here since it doesn't affect data correctness).
+- **Root cause of the SOTA path's total failure is still not confirmed.** The best lead: `detect_document_type` (a single, non-concurrent call, made in isolation *before* the parallel strategies) also fails every time, which doesn't fit a simple "concurrent calls trip a rate limit" theory — but 3 near-simultaneous Groq calls (`ThreadPoolExecutor(max_workers=3)`) are still the most likely trigger for whatever the underlying constraint is (Groq per-account concurrency/RPM cap, or cumulative quota exhausted by this session's own repeated testing). The newly-added per-strategy error capture should make the real reason visible next time this is checked — either via the job's error message (if the standard-pipeline fallback also happens to fail) or via Render's server logs (`print()` output), which this session still has no access to.
+
+**Why:** Direct, repeated user pressure for real accuracy and robustness rather than assumed fixes — this entry reflects actual live testing, not just code reasoning.
+
+**What's confirmed NOT the cause of any of today's issues:** the model swap itself introduced no new errors (Maverick works correctly wherever a single Groq call succeeds); JSON mode introduced no new errors either (used successfully in the Fast-pipeline test).
+
+**Still open / needs the user's help:**
+1. Speed — both pipelines are still far slower than the ~5s target even after the Tesseract-skip and full-resolution revert. This may be dominated by Render's free-tier CPU/network constraints and/or Maverick's inference latency vs. Scout's, neither of which is fixable from this codebase alone.
+2. Why the SOTA engine's calls fail 100% of the time while single sequential calls succeed — needs Render's live logs (search for "failed:" — every failure now prints a real message) to pin down definitively.
+
+**Verified:** `python -m py_compile` + full module-import checks on all three changed files — clean. Live end-to-end testing against the deployed backend as described above (not just local checks this time).
+
+**Files changed:**
+- `groq_ocr_client.py`
+- `gemini_ocr_extract.py`
+- `sota_extraction_engine.py`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-30 (second follow-up, same day) — Reverted Vision Image Downscaling — Accuracy Over Speed
 
 **What changed:**
