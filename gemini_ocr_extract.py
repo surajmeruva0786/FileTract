@@ -142,6 +142,7 @@ def extract_fields_with_gemini(
     fields_list = ", ".join(fields)
 
     # ── Vision path (preferred) ────────────────────────────────────────────
+    vision_error = None
     if image_path and os.path.exists(image_path):
         try:
             from PIL import Image as PILImage
@@ -165,10 +166,17 @@ JSON:"""
             print(f"  ✅ Vision: {found}/{len(fields)} fields extracted")
             return result
         except Exception as e:
+            vision_error = e
             print(f"  ⚠ Vision extraction failed ({e}), falling back to text mode")
 
     # ── Text path (fallback) ───────────────────────────────────────────────
     if not extracted_text or len(extracted_text.strip()) < 10:
+        if vision_error is not None:
+            # No image succeeded AND no usable OCR text to fall back on — this is a
+            # real failure (e.g. Groq rate-limited/timed out), not "field not visible".
+            # Raise instead of quietly returning nulls so the job surfaces as an error
+            # the app can show, rather than a false "success" with empty fields.
+            raise RuntimeError(f"Groq extraction failed: {vision_error}")
         print("  ⚠️ OCR text empty — returning null values")
         return {field: None for field in fields}
 
@@ -200,7 +208,9 @@ JSON:"""
         return result
     except Exception as e:
         print(f"  ❌ Groq text extraction failed: {e}")
-        return {field: None for field in fields}
+        # Real API failure — raise so the caller marks the job as errored instead of
+        # returning a misleadingly "successful" result full of nulls.
+        raise RuntimeError(f"Groq extraction failed: {e}") from e
 
 
 # ============================================================

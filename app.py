@@ -93,10 +93,12 @@ def process_job_async(job_id: str, file_path: str, fields: List[str], pipeline: 
                 ext = os.path.splitext(file_path)[1].lower()
                 if ext == '.pdf':
                     text = extract_text_from_pdf(file_path)
+                    fallback_image_path = None
                 else:
                     text = extract_text_from_image(file_path)
-                
-                extracted_data = extract_fields_with_gemini(text, fields)
+                    fallback_image_path = file_path  # still try Vision, not just noisy Tesseract text
+
+                extracted_data = extract_fields_with_gemini(text, fields, fallback_image_path)
                 jobs[job_id]['status'] = 'complete'
                 jobs[job_id]['current_stage'] = 2
                 jobs[job_id]['results'] = extracted_data

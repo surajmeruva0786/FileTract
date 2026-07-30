@@ -447,14 +447,13 @@ Return ONLY JSON:"""
             executor.shutdown(wait=False)
 
         if not strategy_results:
-            # All strategies failed — return empty result
-            return SOTAResult(
-                fields={f: None for f in fields},
-                field_confidence={f: 'low' for f in fields},
-                field_consensus={f: False for f in fields},
-                strategies_used=[],
-                doc_type=doc_type,
-                quality_score=0.0,
+            # All strategies failed (e.g. Groq rate-limited/timed out on every call).
+            # Raise instead of returning a fake "successful" empty result — this lets
+            # it propagate to app.py's existing patent->standard pipeline fallback,
+            # and if that also fails, surfaces as a real job error instead of the
+            # app silently showing empty fields as if extraction succeeded.
+            raise RuntimeError(
+                f"All extraction strategies failed for document (doc_type={doc_type})"
             )
 
         # ── Step 3: Consensus fusion ───────────────────────────────────

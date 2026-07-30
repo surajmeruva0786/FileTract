@@ -59,6 +59,36 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-30 — Fixed "Empty Values" Bug on Both Pipelines + Vision Latency + Default Sheets URL
+
+**What changed:**
+- User reported both Fast (standard) and Accurate (patent) extraction worked once on-device, then started returning **empty values on every subsequent attempt**, with Fast also taking ~15-16s instead of a target ~5s.
+- **Root cause found (silent failure swallowing):** every Groq call site caught its own exceptions (timeouts, rate limits, malformed responses) and returned an all-`null` field dict as if extraction had *succeeded* — the job was marked `'complete'` with empty data and no error ever reached the UI. This is textbook Groq free-tier rate-limit behavior: the patent/Accurate pipeline fires up to 5 Groq calls per single job (`sota_extraction_engine.py`: doc-type detection + 2-3 parallel vision strategies + a verification call), so a handful of test runs back-to-back exhausts the per-minute quota; every call after that quietly degraded to nulls instead of surfacing the real problem.
+  - **`gemini_ocr_extract.py`** (`extract_fields_with_gemini`) — now raises instead of silently returning nulls when an actual API call fails and there's no usable OCR-text fallback (a genuinely empty document — no image, no OCR text — still returns nulls gracefully; that's not an error).
+  - **`sota_extraction_engine.py`** (`SOTAExtractionEngine.extract`) — when *all* strategies fail, now raises instead of returning a fake "successful" empty `SOTAResult`. This was the key fix: `app.py`'s patent-pipeline `except` block already had fallback-to-standard-pipeline logic written, but it could never trigger because the SOTA engine never actually raised.
+  - **`app.py`** — that fallback branch also never passed the image through to the retry call (`extract_fields_with_gemini(text, fields)` — no `image_path`), meaning a fallback attempt only ever got noisy Tesseract OCR text, never a second shot at Vision. Now passes the image through so the fallback can still use Vision extraction, not just raw OCR text.
+  - Net effect: a real failure (e.g. Groq rate limit) now surfaces as an actual job error the app's existing "Extraction Failed" screen can show, instead of a false "success" with blank fields. This does **not** fix Groq's own account-level rate limits — if the new error message says rate-limited/429, that's a Groq plan/quota constraint, not something fixable in this codebase.
+- **`groq_ocr_client.py`** — two latency fixes on the shared `_to_data_url` image-encoding path (used by both pipelines):
+  - Images are now downscaled to a 1600px longest side before being sent to Groq Vision. Phone photos routinely come in at 3000-4000px+; that resolution is unnecessary for legible printed text and was adding significant upload + image-token processing time on every single call. JPEG quality also reduced 92→88 (imperceptible for OCR purposes, smaller payload).
+  - `Groq(api_key=..., max_retries=1)` — was defaulting to the SDK's `max_retries=2`, meaning a transient 429/5xx silently tripled a call's latency (and its slice of the caller's timeout budget) before finally failing. Capped at 1 retry so a real failure surfaces fast instead of stalling.
+- **`filetract_mobile/services/googleSheets.js`** — `getSheetsUrl()` now falls back to the user's deployed Apps Script Web App URL (`https://script.google.com/macros/s/AKfycbxaPSBqZMqMZ_wqSL0lxtW6U3lpwLsP3e9sN5_EWc-FVx0O3f-5g_4dtyVL8v3k3FTbtw/exec`) when nothing is saved yet, so it's pre-filled in Settings and exports work out of the box instead of requiring the user to paste it in manually first. Saving a different URL in Settings still overrides it as before.
+
+**Why:** User's explicit bug report — both pipelines appeared broken (empty predictions) after the first run, and Fast was too slow for good UX.
+
+**Verified:** `python -m py_compile` on all four changed Python files, and a full module-import check (`GROQ_API_KEY=dummy ... import app, gemini_ocr_extract, patent_ocr_pipeline, sota_extraction_engine, groq_ocr_client`) — all clean. `npx expo export --platform android` on the mobile change — bundles cleanly. No live Groq key available in this environment, so the actual rate-limit hypothesis and the real-world latency improvement from downscaling could not be measured end-to-end here; needs confirmation against the live Render deployment.
+
+**Known pre-existing inconsistency (not touched here):** `render.yaml` still lists `GEMINI_API_KEY` as the service env var, even though the code and the live Render service have used `GROQ_API_KEY` since the 2026-07-21 migration. Render Blueprints are normally only read on initial provisioning, not on every push, so this is unlikely to affect the already-running service — but worth fixing if the service is ever reprovisioned from this file.
+
+**Files changed:**
+- `groq_ocr_client.py`
+- `gemini_ocr_extract.py`
+- `sota_extraction_engine.py`
+- `app.py`
+- `filetract_mobile/services/googleSheets.js`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-29 — Rebuilt Mobile App UI from the Claude-Designed Mockup (FileTract-app-frontend)
 
 **What changed:**

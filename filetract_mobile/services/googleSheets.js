@@ -2,6 +2,10 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const SHEETS_URL_KEY = '@filetract_sheets_url';
 
+// User's deployed Apps Script Web App — used until they save a different one in Settings.
+const DEFAULT_SHEETS_URL =
+  'https://script.google.com/macros/s/AKfycbxaPSBqZMqMZ_wqSL0lxtW6U3lpwLsP3e9sN5_EWc-FVx0O3f-5g_4dtyVL8v3k3FTbtw/exec';
+
 /**
  * Save the Google Apps Script Web App URL to persistent storage.
  */
@@ -10,10 +14,11 @@ export async function saveSheetsUrl(url) {
 }
 
 /**
- * Retrieve the stored Google Apps Script Web App URL.
+ * Retrieve the stored Google Apps Script Web App URL, falling back to the default.
  */
 export async function getSheetsUrl() {
-  return await AsyncStorage.getItem(SHEETS_URL_KEY);
+  const stored = await AsyncStorage.getItem(SHEETS_URL_KEY);
+  return stored || DEFAULT_SHEETS_URL;
 }
 
 /**

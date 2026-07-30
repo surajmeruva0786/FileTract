@@ -28,7 +28,12 @@ _client: Optional[Groq] = None
 def configure(api_key: str):
     """Mirrors genai.configure(api_key=...)."""
     global _client
-    _client = Groq(api_key=api_key)
+    # max_retries defaults to 2 in the Groq SDK — on a transient 429/5xx that's up to
+    # 3 total attempts with backoff, silently tripling latency on every call site's
+    # timeout budget. One retry is enough to ride out a blip; capping it here keeps
+    # a real failure (e.g. rate limit) fast so it surfaces as a job error quickly
+    # instead of stalling the request for tens of seconds first.
+    _client = Groq(api_key=api_key, max_retries=1)
 
 
 class types:
@@ -44,9 +49,22 @@ class _Response:
         self.text = text
 
 
+# Longest side to send to the vision model. Phone photos routinely come in at
+# 3000-4000px+; that's far more resolution than printed document text needs to
+# stay legible, and every extra pixel adds upload time plus image-token
+# processing time on Groq's side. 1600px keeps text sharp while cutting typical
+# payload size (and latency) several times over versus sending full-resolution.
+_MAX_VISION_DIMENSION = 1600
+
+
 def _to_data_url(image: "_PILImage.Image") -> str:
+    image = image.convert("RGB")
+    if max(image.size) > _MAX_VISION_DIMENSION:
+        scale = _MAX_VISION_DIMENSION / max(image.size)
+        new_size = (round(image.width * scale), round(image.height * scale))
+        image = image.resize(new_size, _PILImage.LANCZOS)
     buf = io.BytesIO()
-    image.convert("RGB").save(buf, format="JPEG", quality=92)
+    image.save(buf, format="JPEG", quality=88)
     b64 = base64.b64encode(buf.getvalue()).decode("ascii")
     return f"data:image/jpeg;base64,{b64}"
 
