@@ -167,7 +167,8 @@ class SOTAExtractionEngine:
         )
         try:
             return self._call([pil_image, prompt])
-        except Exception:
+        except Exception as e:
+            print(f"    [SOTA] Document-type detection failed: {e}")
             return "Document"
 
     # ─── Extraction Strategies ────────────────────────────────────────────
@@ -452,14 +453,22 @@ Return ONLY JSON:"""
         finally:
             executor.shutdown(wait=False)
 
-        if not strategy_results:
+        # NOTE: `strategy_results` is virtually never empty — each _strategy_* method
+        # catches its own exceptions internally and returns a StrategyResult(success=
+        # False, ...) rather than raising, so `fut.result()` above never actually
+        # throws. The real "did everything fail" signal is whether any entry
+        # succeeded, not whether the list itself is empty (a plain `if not
+        # strategy_results` here is effectively dead code and was the bug in an
+        # earlier fix attempt — it never caught this exact all-failed scenario).
+        if not any(r.success for r in strategy_results):
+            errors = '; '.join(f'{r.strategy_name}: {r.error}' for r in strategy_results if r.error)
             # All strategies failed (e.g. Groq rate-limited/timed out on every call).
             # Raise instead of returning a fake "successful" empty result — this lets
             # it propagate to app.py's existing patent->standard pipeline fallback,
             # and if that also fails, surfaces as a real job error instead of the
             # app silently showing empty fields as if extraction succeeded.
             raise RuntimeError(
-                f"All extraction strategies failed for document (doc_type={doc_type})"
+                f"All extraction strategies failed for document (doc_type={doc_type}): {errors}"
             )
 
         # ── Step 3: Consensus fusion ───────────────────────────────────
