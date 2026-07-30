@@ -141,10 +141,16 @@ class SOTAExtractionEngine:
                 hints.append(f'• {f}: Locate and extract this field from the document')
         return '\n'.join(hints)
 
-    def _call(self, parts, timeout: int = 45) -> str:
-        """Single Groq multimodal call, bounded so a stalled request fails fast instead of hanging."""
+    def _call(self, parts, timeout: int = 45, json_mode: bool = False) -> str:
+        """Single Groq multimodal call, bounded so a stalled request fails fast instead of hanging.
+
+        json_mode=True guarantees syntactically valid JSON back from Groq instead of
+        relying on regex/markdown-fence cleanup of free-form text — used by every
+        strategy/verification call here since they all expect a JSON object. Left
+        False for plain-text prompts like document-type detection.
+        """
         return self.model.generate_content(
-            parts, request_options={'timeout': timeout}
+            parts, request_options={'timeout': timeout, 'json_mode': json_mode}
         ).text.strip()
 
     # ─── Document Type Detection ──────────────────────────────────────────
@@ -195,7 +201,7 @@ Rules:
 JSON:"""
 
         try:
-            raw = self._call([pil_image, prompt])
+            raw = self._call([pil_image, prompt], json_mode=True)
             parsed = self._parse_json(raw)
             result_fields = {f: self._norm_val(parsed.get(f)) for f in fields}
             return StrategyResult(
@@ -237,7 +243,7 @@ For each field:
 Return ONLY JSON. No preamble, no markdown:"""
 
         try:
-            raw = self._call([pil_image, prompt])
+            raw = self._call([pil_image, prompt], json_mode=True)
             parsed = self._parse_json(raw)
             result_fields = {f: self._norm_val(parsed.get(f)) for f in fields}
             return StrategyResult(
@@ -280,7 +286,7 @@ Extract these fields: {fields_list}
 Return ONLY a JSON object with field names as keys:"""
 
         try:
-            raw = self._call([pil_image, prompt])
+            raw = self._call([pil_image, prompt], json_mode=True)
             parsed = self._parse_json(raw)
             result_fields = {f: self._norm_val(parsed.get(f)) for f in fields}
             return StrategyResult(
@@ -384,7 +390,7 @@ For each field: return the exact correct value, or null if truly absent.
 Return ONLY JSON:"""
 
         try:
-            raw = self._call([pil_image, prompt])
+            raw = self._call([pil_image, prompt], json_mode=True)
             parsed = self._parse_json(raw)
             result = {}
             for f in uncertain_fields:

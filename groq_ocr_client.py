@@ -17,8 +17,12 @@ from typing import Optional
 from PIL import Image as _PILImage
 from groq import Groq
 
-# Groq vision-capable model (accepts image + text prompts)
-VISION_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
+# Groq vision-capable model (accepts image + text prompts).
+# Llama 4 Maverick is Meta's larger, more capable multimodal model (128 experts
+# vs Scout's 16) — used here instead of Scout for the strongest document/text
+# reading accuracy Groq currently offers, per user request for the best
+# available quality rather than the fastest/cheapest option.
+VISION_MODEL = "meta-llama/llama-4-maverick-17b-128e-instruct"
 # Groq text-only model (plain prompts, no image)
 TEXT_MODEL = "llama-3.3-70b-versatile"
 
@@ -73,11 +77,22 @@ class GenerativeModel:
         self.max_output_tokens = cfg.max_output_tokens
 
     def generate_content(self, parts, request_options: dict = None) -> _Response:
-        """Mirrors genai's model.generate_content(parts, request_options={'timeout': N}).text"""
+        """Mirrors genai's model.generate_content(parts, request_options={'timeout': N}).text
+
+        request_options also accepts 'json_mode': True (not part of the genai
+        surface being mirrored, but call sites here opt into it) — this asks
+        Groq to guarantee syntactically valid JSON output instead of relying on
+        regex/markdown-fence cleanup of free-form text, which is a real source
+        of parse failures on otherwise-correct extractions. Only set this for
+        prompts that actually ask for JSON — forcing it on a plain-text prompt
+        (e.g. document-type detection) would break that call.
+        """
         if _client is None:
             raise RuntimeError("groq_ocr_client.configure(api_key) was not called — GROQ_API_KEY missing")
 
-        timeout = (request_options or {}).get("timeout", 60)
+        opts = request_options or {}
+        timeout = opts.get("timeout", 60)
+        json_mode = opts.get("json_mode", False)
 
         if isinstance(parts, str):
             parts = [parts]
@@ -101,11 +116,15 @@ class GenerativeModel:
             content = prompt
             model = TEXT_MODEL
 
-        completion = _client.chat.completions.create(
+        kwargs = dict(
             model=model,
             messages=[{"role": "user", "content": content}],
             temperature=self.temperature,
             max_tokens=self.max_output_tokens,
             timeout=timeout,
         )
+        if json_mode:
+            kwargs["response_format"] = {"type": "json_object"}
+
+        completion = _client.chat.completions.create(**kwargs)
         return _Response(completion.choices[0].message.content.strip())
