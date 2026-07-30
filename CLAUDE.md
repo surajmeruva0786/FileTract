@@ -59,6 +59,27 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-30 (second follow-up, same day) — Reverted Vision Image Downscaling — Accuracy Over Speed
+
+**What changed:**
+- User reported that after the downscaling fix (1600px, then 2048px — see the two entries below), Fast-pipeline extraction accuracy was noticeably below the original pre-session behavior: "results were also better than previous, but not up to that level." Asked to go back to exactly the state where results were good and keep only that.
+- **`groq_ocr_client.py`** — reverted `_to_data_url` back to its original form: images are sent to Groq Vision at **full resolution**, JPEG quality 92, no resizing. Removed the `_MAX_VISION_DIMENSION` downscale step entirely.
+
+**Why:** Direct user report of an accuracy regression traced to the earlier speed optimization — small print on real (uncropped, full-frame) phone photos was apparently landing below a legible size once downscaled, hurting extraction quality more than the latency win was worth. Per explicit instruction, reverted rather than re-tuning the threshold further.
+
+**What's intentionally still in place (not reverted — unrelated to the accuracy complaint):**
+- `Groq(api_key=..., max_retries=1)` in `groq_ocr_client.configure()` — caps retry-related latency/stalling on failures, doesn't touch the successful-call image data.
+- The error-surfacing fix in `gemini_ocr_extract.py`/`sota_extraction_engine.py` — real API failures still raise instead of silently returning empty fields as a fake "success."
+- The Tesseract-skip restructuring in `app.py` — Vision is still tried first with no OCR text on the standard pipeline's happy path; Tesseract only runs lazily on a Vision failure. This never touched the image data Vision receives, so it isn't implicated in the accuracy regression.
+
+**Verified:** `python -m py_compile groq_ocr_client.py` and a full module-import check (`GROQ_API_KEY=dummy ... import groq_ocr_client, gemini_ocr_extract, app`) — clean. Not yet re-verified end-to-end against the live backend for accuracy (needs a fresh test once Render redeploys — see the deploy-lag note in the entry below, which was still unresolved as of this fix).
+
+**Files changed:**
+- `groq_ocr_client.py`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-30 — Fixed "Empty Values" Bug on Both Pipelines + Vision Latency + Default Sheets URL
 
 **What changed:**
