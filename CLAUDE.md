@@ -59,6 +59,33 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-31 — Implemented Fast Pipeline Infra Hardening (Cloud-Only, No On-Device); Confirmed No Better JSON Mode Is Available Yet
+
+**What changed:**
+- User explicitly reconfirmed: no on-device LLM, no on-device backend — stay entirely on Render, and make the Fast pipeline the fastest/most-accurate version achievable using only existing, proven, off-the-shelf techniques (no bespoke/novel engineering). Asked me to actually implement the plan from the entry directly below (which had been logged as plan-only) rather than leave it undone.
+- **`Dockerfile`** — gunicorn invocation changed from bare `gunicorn app:app --bind 0.0.0.0:$PORT` (implicit single sync worker) to `gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 4 --timeout 120`. A single sync worker blocks the entire process on any in-flight Groq call, so `/api/health` and a second concurrent request would queue behind it. Threaded worker class fixes that without adding a second process (which the free tier's limited RAM can't afford — threads share memory, processes don't). This is gunicorn's own documented, standard concurrency mechanism, not a custom one.
+- **`Procfile`** — same gunicorn flags applied for consistency, even though Render actually deploys via `render.yaml`'s `env: docker` + `Dockerfile` (the Procfile isn't read by the current deploy path, but it's a leftover Heroku-style file that would be misleading if left stale).
+- **`render.yaml`** — fixed the stale `GEMINI_API_KEY` env var entry to `GROQ_API_KEY`. The live Render service already has `GROQ_API_KEY` set manually in its dashboard (since the 2026-07-21 migration) and Render doesn't re-read Blueprints on every push, so this was harmless today but would silently break a from-scratch reprovision from this file.
+- **Investigated whether Groq's strict JSON Schema structured-outputs mode (`response_format: {"type": "json_schema", ...}`, constrained-decoding, 100% schema adherence — a real, existing, better-than-`json_object` accuracy technique) is available to swap in.** Confirmed via Groq's own docs (`console.groq.com/docs/structured-outputs`, fetched live) that strict mode currently supports only `openai/gpt-oss-20b` and `openai/gpt-oss-120b` — **not** `meta-llama/llama-4-maverick-17b-128e-instruct`, the vision model this pipeline depends on for all image-based extraction. So the `json_mode`/`response_format: json_object` approach already wired in (2026-07-30, third follow-up) remains the best currently-available option for this specific model; nothing to change here. Worth revisiting if/when Groq extends strict mode to Llama-4 vision models.
+- **Deliberately not changed (same reasoning as the plan entry below):** `VISION_MODEL` (still Maverick), the full-resolution image encoding in `groq_ocr_client.py` (downscaling was tried twice before and measurably hurt accuracy — not touching it again without an explicit go-ahead + controlled accuracy test), and the Vision-first/Tesseract-fallback flow in `app.py` (already optimal — no OCR text computed unless Vision actually fails).
+
+**Why:** Direct follow-through on the plan logged in the entry immediately below, after the user reconfirmed the cloud-only direction and asked for it to actually be implemented rather than stay documented-only.
+
+**Still not done — genuinely needs the user, not fixable from code:**
+1. **Render plan upgrade (free → Starter, ~$7/mo)** — still the single highest-impact fix available. Free-tier cold starts (spin-down after ~15 min idle) are very likely the largest single contributor to the observed 40-52s latency, and no in-code change can substitute for a dedicated, always-on instance. This is a billing/dashboard decision only the user can make.
+2. **External keep-alive ping** (e.g. UptimeRobot or cron-job.org hitting `/api/health` every ~10 min) — a standard, free, zero-code workaround for Render free-tier spin-down. Requires the user to create an account on an external monitoring service; not something to set up unilaterally.
+3. Bounded image-downscale experiment (only resize if longest side > ~3500px) — still just flagged, not started; would need an explicit go-ahead and a before/after accuracy check given the track record of two prior downscale attempts regressing accuracy.
+
+**Verified:** Read back all three changed files (`Dockerfile`, `Procfile`, `render.yaml`) after editing — confirmed `gthread`/thread flags and the `GROQ_API_KEY` correction are present and nothing else was altered. `gunicorn>=21.0.0` in `requirements.txt` already supports `gthread` (built into gunicorn core, no extra dependency needed). Not yet redeployed/tested live against Render — these are infra/config-only changes with no application logic touched, so no local pipeline test was needed, but the actual latency improvement should be confirmed against the live site after this deploys.
+
+**Files changed:**
+- `Dockerfile`
+- `Procfile`
+- `render.yaml`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-30 (fourth follow-up, same day) — Planned: Fast Pipeline Hardening + On-Device LLM Feasibility Assessment (Plan Only, No Code Changed)
 
 **Ask:** User wants two things investigated: (1) make the Fast/standard pipeline the best-in-world for speed *and* accuracy using only existing, proven techniques — explicitly no novel/bespoke engineering; and (2) an assessment of moving the backend and LLM onto the mobile device itself (a small model running on phone hardware) to escape Render free-tier slowness. Explicitly requested a plan only this round, documented and pushed, with no implementation yet.

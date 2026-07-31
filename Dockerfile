@@ -32,5 +32,8 @@ RUN mkdir -p uploads results
 # Expose port (Render will override with PORT env var)
 EXPOSE 5000
 
-# Run the application with gunicorn
-CMD gunicorn app:app --bind 0.0.0.0:$PORT
+# Run the application with gunicorn. Threaded worker class lets this single
+# free-tier instance keep serving /api/health and a second concurrent request
+# while one is blocked on an in-flight Groq call, without spawning extra
+# processes (which the free tier's limited RAM can't afford).
+CMD gunicorn app:app --bind 0.0.0.0:$PORT --worker-class gthread --workers 1 --threads 4 --timeout 120
