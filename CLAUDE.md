@@ -59,6 +59,37 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-31 (follow-up, same day) — Fast Pipeline: Switched From Single-Call Vision to the Sequential SOTA Consensus Engine — Accuracy Over Speed
+
+**What changed:**
+- User reported that on a real ID card with 5 fields, the Fast pipeline was extracting fewer than 3 correctly — explicitly said to forget about speed entirely ("let it be slow... I will just buy the [Render Starter] plan later") and make extraction itself the best achievable, using only existing/proven techniques (no bespoke engineering), specifically for the Fast pipeline.
+- **Root cause of the poor accuracy:** the Fast/standard pipeline (`gemini_ocr_extract.extract_fields_with_gemini`) made exactly **one** Groq Vision call per document and returned whatever it said, with no cross-check, no consensus, and no correction pass. Any single hallucination, misread character, or field the model glossed over on that one pass went straight to the user with nothing to catch it. Meanwhile this exact codebase already has a much stronger design sitting unused by the Fast path — `sota_extraction_engine.py`'s `SOTAExtractionEngine`, built 2026-07-01 for the Patent/Accurate pipeline: 3 independently-prompted vision strategies (direct, analytical/field-by-field, OCR-assisted), cross-strategy consensus voting, and a targeted self-verification pass for any field the strategies disagreed on or missed. That is a well-established, textbook technique (self-consistency ensembling + self-verification/self-refine prompting — not novel or bespoke), it was already fully built, and it just wasn't being used by Fast.
+- **`sota_extraction_engine.py`** — `SOTAExtractionEngine.extract()` gained a `parallel: bool = True` parameter. When `False`, the same 2-3 strategies run one after another via a plain loop instead of `ThreadPoolExecutor`, reusing the exact same `_strategy_*` methods — no new extraction logic, just a different call order. This matters because live testing on the Patent pipeline (documented in the 2026-07-30 entries above) showed the parallel path failing **100% of the time** — every simultaneous Groq call failing at once (`strategies_used: []`), most consistent with a per-account concurrent-request cap on the Groq plan in use. Sequential execution sidesteps that failure mode entirely; the tradeoff is latency, which the user explicitly said is now acceptable.
+- **`app.py`** — the standard/Fast branch of `process_job_async` no longer calls `extract_fields_with_gemini` directly as the primary path. It now:
+  1. Runs the same preprocessing the Patent pipeline uses (`extract_image_with_sota_pipeline` / `extract_pdf_with_sota_pipeline` from `patent_ocr_pipeline.py` — deskew, CLAHE illumination normalization, card/document perspective crop, plus a full Tesseract OCR pass run in parallel with that preprocessing to feed the third strategy). All of this was already built and used by Patent; Fast previously skipped it entirely for speed.
+  2. Builds a `SOTAExtractionEngine` and calls `.extract(..., enable_verification=True, parallel=False)` — 2 vision strategies (3 if OCR text came back usable) run sequentially, consensus-voted, then any field with low confidence or strategy disagreement gets a dedicated re-verification call against the image before the result is finalized.
+  3. Falls back to the previous single-call Vision extraction (unchanged, still present in `gemini_ocr_extract.py`) only if the entire SOTA path raises — so this change cannot make Fast-pipeline reliability worse than it was before, only better or equal.
+  - Output shape is unchanged (`{field_name: value}`, one flat dict) — `sota_result.fields` is exactly that shape already, so neither `filetract_web/app.js` (which branches on the `pipeline` key) nor the mobile app's `PreviewScreen.js` (which branches on result shape) needed any changes.
+- **`app.py`** — `STANDARD_PIPELINE_TIMEOUT` raised from 60s to 260s. The sequential path can now make up to ~4-5 Groq calls per job (doc-type detection + 2-3 strategies + a verification call), each individually capped at 45s; worst case is additive rather than overlapping, so the old 60s ceiling would have killed a fully-sequential run partway through.
+- **Considered and explicitly not done:** switching the Patent/Accurate pipeline to `parallel=False` too. The user's ask was scoped to the Fast pipeline specifically; Patent's own reliability issue (documented in the 2026-07-30 entries) is a separate, already-tracked open item, not touched in this pass to avoid unrequested scope creep.
+- **Checked whether an even better JSON extraction mode had become available since yesterday** (Groq's strict `json_schema` structured-output mode — 100% schema adherence via constrained decoding) before deciding what else to change: confirmed via Groq's live docs it's still limited to `openai/gpt-oss-20b/120b`, not the Maverick vision model this pipeline depends on, so no further change there (see the entry immediately above this one).
+
+**Why:** Direct user report of unacceptable Fast-pipeline accuracy (2 of 5 fields correct on a real ID card) plus an explicit, repeated instruction to prioritize accuracy over speed and to only use already-existing, proven techniques — which pointed straight at reusing this codebase's own already-built (but previously Patent-only) consensus engine rather than inventing something new.
+
+**Verified:** `python -m py_compile` on both changed files — clean. Full module-import check (`GROQ_API_KEY=dummy ... import app, sota_extraction_engine, patent_ocr_pipeline, gemini_ocr_extract, groq_ocr_client`) — clean, and confirmed via `inspect.signature` that `SOTAExtractionEngine.extract` now exposes the new `parallel` parameter as expected. **Not yet verified live** — no working `GROQ_API_KEY` is available in this local environment (`.env` has the key line present but empty, consistent with every prior session in this log), so the actual field-accuracy improvement and real-world latency of the new sequential multi-call path still need confirmation against the deployed Render service once this redeploys.
+
+**Still open / needs the user:**
+1. Live re-test against `https://filetract.onrender.com` with the same ID card that only got ~2/5 fields before, to confirm the fix actually lands — cannot be done from this environment without a Groq key.
+2. Fast-pipeline latency will now be substantially higher (up to several sequential Groq calls instead of one) — expected and accepted per this session's explicit instruction, but worth knowing going in if testing today.
+3. Everything from the 2026-07-31 (first) entry above is still open and unaffected by this change: Render Starter plan upgrade, external keep-alive ping, and the bounded image-downscale experiment.
+
+**Files changed:**
+- `sota_extraction_engine.py`
+- `app.py`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-31 — Implemented Fast Pipeline Infra Hardening (Cloud-Only, No On-Device); Confirmed No Better JSON Mode Is Available Yet
 
 **What changed:**
