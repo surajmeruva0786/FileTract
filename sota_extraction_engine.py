@@ -409,49 +409,76 @@ Return ONLY JSON:"""
         fields: List[str],
         ocr_text: str = '',
         enable_verification: bool = True,
+        parallel: bool = True,
     ) -> SOTAResult:
         """
         Full SOTA pipeline:
         1. Document type detection
-        2. Parallel multi-strategy vision extraction
+        2. Multi-strategy vision extraction (parallel or sequential)
         3. Cross-strategy consensus fusion
         4. Self-verification for uncertain fields
         5. Quality scoring
+
+        parallel=False runs the strategies one after another instead of via
+        ThreadPoolExecutor. Slower, but avoids firing several simultaneous Groq
+        calls — live testing on the patent pipeline (parallel=True) has shown
+        every strategy failing at once (strategies_used: []), consistent with
+        a per-account concurrent-request limit on the Groq plan in use. Callers
+        that can tolerate the extra latency should prefer parallel=False for
+        reliability.
         """
         # ── Step 1: Document type ──────────────────────────────────────
         print("    [SOTA] Identifying document type...")
         doc_type = self.detect_document_type(pil_image)
         print(f"    [SOTA] Document: {doc_type}")
 
-        # ── Step 2: Parallel extraction ───────────────────────────────
-        print("    [SOTA] Parallel extraction (3 strategies)...")
+        # ── Step 2: Extraction ──────────────────────────────────────────
         strategy_results: List[StrategyResult] = []
+        has_ocr = ocr_text and len(ocr_text.strip()) > 10
 
-        # Not using ThreadPoolExecutor as a context manager: its __exit__ calls
-        # shutdown(wait=True), which blocks until every submitted thread finishes —
-        # ignoring any per-future timeout below. shutdown(wait=False) lets a stalled
-        # request keep running in the background without hanging this response.
-        executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
-        try:
-            futures = {
-                executor.submit(self._strategy_vision_primary, pil_image, fields, doc_type): 'A:vision_primary',
-                executor.submit(self._strategy_vision_analytical, pil_image, fields, doc_type): 'B:vision_analytical',
-            }
-            has_ocr = ocr_text and len(ocr_text.strip()) > 10
+        if parallel:
+            print("    [SOTA] Parallel extraction (3 strategies)...")
+            # Not using ThreadPoolExecutor as a context manager: its __exit__ calls
+            # shutdown(wait=True), which blocks until every submitted thread finishes —
+            # ignoring any per-future timeout below. shutdown(wait=False) lets a stalled
+            # request keep running in the background without hanging this response.
+            executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+            try:
+                futures = {
+                    executor.submit(self._strategy_vision_primary, pil_image, fields, doc_type): 'A:vision_primary',
+                    executor.submit(self._strategy_vision_analytical, pil_image, fields, doc_type): 'B:vision_analytical',
+                }
+                if has_ocr:
+                    f_c = executor.submit(self._strategy_ocr_assisted, pil_image, ocr_text, fields, doc_type)
+                    futures[f_c] = 'C:ocr_assisted'
+
+                for fut, label in futures.items():
+                    try:
+                        res = fut.result(timeout=60)
+                        found = sum(1 for v in res.fields.values() if v)
+                        print(f"    [SOTA] {label}: {found}/{len(fields)} fields")
+                        strategy_results.append(res)
+                    except Exception as e:
+                        print(f"    [SOTA] {label} failed: {e}")
+            finally:
+                executor.shutdown(wait=False)
+        else:
+            print("    [SOTA] Sequential extraction (3 strategies)...")
+            tasks = [
+                ('A:vision_primary', self._strategy_vision_primary, (pil_image, fields, doc_type)),
+                ('B:vision_analytical', self._strategy_vision_analytical, (pil_image, fields, doc_type)),
+            ]
             if has_ocr:
-                f_c = executor.submit(self._strategy_ocr_assisted, pil_image, ocr_text, fields, doc_type)
-                futures[f_c] = 'C:ocr_assisted'
+                tasks.append(('C:ocr_assisted', self._strategy_ocr_assisted, (pil_image, ocr_text, fields, doc_type)))
 
-            for fut, label in futures.items():
+            for label, fn, fn_args in tasks:
                 try:
-                    res = fut.result(timeout=60)
+                    res = fn(*fn_args)
                     found = sum(1 for v in res.fields.values() if v)
                     print(f"    [SOTA] {label}: {found}/{len(fields)} fields")
                     strategy_results.append(res)
                 except Exception as e:
                     print(f"    [SOTA] {label} failed: {e}")
-        finally:
-            executor.shutdown(wait=False)
 
         # NOTE: `strategy_results` is virtually never empty — each _strategy_* method
         # catches its own exceptions internally and returns a StrategyResult(success=
