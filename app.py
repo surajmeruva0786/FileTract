@@ -16,11 +16,7 @@ import concurrent.futures
 from typing import Dict, List
 
 # Import patent pipeline modules
-from patent_ocr_pipeline import (
-    process_document_with_patent_pipeline, extract_text_with_confidence_pipeline,
-    extract_image_with_sota_pipeline, extract_pdf_with_sota_pipeline,
-)
-from sota_extraction_engine import SOTAExtractionEngine
+from patent_ocr_pipeline import process_document_with_patent_pipeline, extract_text_with_confidence_pipeline
 from gemini_ocr_extract import extract_text_from_pdf, extract_text_from_image, extract_fields_with_gemini
 
 app = Flask(__name__, static_folder='filetract_web', static_url_path='')
@@ -58,10 +54,7 @@ def convert_numpy_types(obj):
         return obj
 
 PATENT_PIPELINE_TIMEOUT = 150  # seconds — hard cap so a stalled call can't hang a job forever
-# Standard/Fast pipeline now runs up to ~5 sequential Groq calls (doc-type detect +
-# 2-3 strategies + verification), each individually capped at 45s — worst case is
-# additive, not overlapping, so this needs real headroom above the old single-call 60s.
-STANDARD_PIPELINE_TIMEOUT = 260  # seconds
+STANDARD_PIPELINE_TIMEOUT = 60  # seconds
 
 def _run_with_timeout(func, args, timeout):
     """
@@ -100,12 +93,10 @@ def process_job_async(job_id: str, file_path: str, fields: List[str], pipeline: 
                 ext = os.path.splitext(file_path)[1].lower()
                 if ext == '.pdf':
                     text = extract_text_from_pdf(file_path)
-                    fallback_image_path = None
                 else:
                     text = extract_text_from_image(file_path)
-                    fallback_image_path = file_path  # still try Vision, not just noisy Tesseract text
-
-                extracted_data = extract_fields_with_gemini(text, fields, fallback_image_path)
+                
+                extracted_data = extract_fields_with_gemini(text, fields)
                 jobs[job_id]['status'] = 'complete'
                 jobs[job_id]['current_stage'] = 2
                 jobs[job_id]['results'] = extracted_data
@@ -146,54 +137,24 @@ def process_job_async(job_id: str, file_path: str, fields: List[str], pipeline: 
             print(f"Patent pipeline completed for job {job_id} in {elapsed:.2f}s")
             
         else:
-            # Standard/Fast pipeline — now runs the SAME multi-strategy,
-            # consensus-voting + self-verification SOTA engine the patent
-            # pipeline uses (already built and proven in this codebase),
-            # executed SEQUENTIALLY instead of in parallel. Per explicit user
-            # request, this trades speed for the best achievable accuracy —
-            # single-call Vision extraction was missing more than half the
-            # fields on real ID cards. Sequential execution (rather than the
-            # patent pipeline's ThreadPoolExecutor) also sidesteps the
-            # concurrency-triggered 100% failure mode observed when 3
-            # simultaneous Groq calls fire at once (strategies_used: [] every
-            # time in live testing — see the 2026-07-30 changelog entries).
-            # Falls back to the original single-call Vision extraction if the
-            # full SOTA path fails outright, so this never regresses below
-            # the previous reliability baseline.
+            # Standard pipeline — now uses Vision when available
             jobs[job_id]['current_stage'] = 1
 
             ext = os.path.splitext(file_path)[1].lower()
-            is_pdf = ext == '.pdf'
+            if ext == '.pdf':
+                text = extract_text_from_pdf(file_path)
+                image_path_for_vision = None  # PDF: vision handled inside gemini_ocr_extract
+            else:
+                text = extract_text_from_image(file_path)
+                image_path_for_vision = file_path  # Pass image for Vision extraction
 
-            try:
-                prep = (extract_pdf_with_sota_pipeline(file_path) if is_pdf
-                        else extract_image_with_sota_pipeline(file_path))
-                jobs[job_id]['current_stage'] = 2
+            jobs[job_id]['current_stage'] = 2
 
-                engine = SOTAExtractionEngine()
-
-                def _run_sota(_engine=engine, _prep=prep, _fields=fields):
-                    return _engine.extract(
-                        _prep['pil_image'], _fields, _prep.get('ocr_text', ''),
-                        enable_verification=True, parallel=False,
-                    )
-
-                sota_result = _run_with_timeout(_run_sota, (), STANDARD_PIPELINE_TIMEOUT)
-                extracted_data = sota_result.fields
-            except Exception as sota_err:
-                print(f"Standard SOTA extraction failed ({sota_err}), falling back to single-call Vision")
-                image_path_for_vision = None if is_pdf else file_path
-                if is_pdf:
-                    text = extract_text_from_pdf(file_path)
-                    extracted_data = _run_with_timeout(
-                        extract_fields_with_gemini, (text, fields, None), STANDARD_PIPELINE_TIMEOUT
-                    )
-                else:
-                    text = extract_text_from_image(file_path)
-                    extracted_data = _run_with_timeout(
-                        extract_fields_with_gemini, (text, fields, image_path_for_vision), STANDARD_PIPELINE_TIMEOUT
-                    )
-
+            # Use Vision when image is available (dramatically better accuracy)
+            extracted_data = _run_with_timeout(
+                extract_fields_with_gemini, (text, fields, image_path_for_vision), STANDARD_PIPELINE_TIMEOUT
+            )
+            
             # Save results
             result_path = os.path.join(RESULTS_FOLDER, f"{job_id}_results.json")
             with open(result_path, 'w', encoding='utf-8') as f:
