@@ -59,6 +59,36 @@ FLASK_ENV=production                   # Optional
 
 ## Changelog
 
+### 2026-07-31 (third follow-up, same day) — Reverted Fast Pipeline (and Shared Groq Client) to the 2026-07-21 Pre-SOTA State
+
+**What changed:**
+- User reported the sequential-SOTA-engine Fast pipeline (added in the entry immediately below, same day) is now erroring out in live testing, and asked to roll back to "the exact codebase" as of a specific timestamp they had from a prior successful job result: **2026-07-30T06:32:47.197Z**, which they confirmed was the last time Fast-pipeline extraction worked perfectly.
+- Located that point in the codebase's history: `2026-07-30T06:32:47Z` falls between commit `fe01a7c` (2026-07-21, "Migrate LLM provider from Gemini to Groq" — 2026-07-21T03:07:06Z) and commit `4c59c2a` (2026-07-30, "Fix empty-values bug on both pipelines..." — 2026-07-30T06:49:00Z, ~16 minutes **after** the target). `fe01a7c` is the last commit touching any of `app.py` / `gemini_ocr_extract.py` / `groq_ocr_client.py` before the target timestamp, so that commit's content is what was live on Render at the moment the user's cited "perfect" job ran.
+- **Restored `app.py`, `gemini_ocr_extract.py`, and `groq_ocr_client.py` to their exact `fe01a7c` content** (`git checkout fe01a7c -- <files>`), undoing everything from 2026-07-30 forward for these three files, including today's own SOTA-engine integration:
+  - **`app.py`** — Standard/Fast branch of `process_job_async` is back to the original shape: run Tesseract eagerly, then a single Vision call via `extract_fields_with_gemini(text, fields, image_path)`. No SOTA multi-strategy engine, no preprocessing (deskew/illumination/crop), no lazy-Tesseract-skip optimization (that came later, in `d990858`), no fallback branch. `STANDARD_PIPELINE_TIMEOUT` is back to `60`.
+  - **`gemini_ocr_extract.py`** — `extract_fields_with_gemini` no longer requests Groq's JSON response mode, and on a real API failure it silently returns `{field: None for field in fields}` again instead of raising a job error (the "empty values bug" fix from `4c59c2a` is reverted along with everything else from that point forward).
+  - **`groq_ocr_client.py`** — `VISION_MODEL` back to **Llama 4 Scout** (`meta-llama/llama-4-scout-17b-16e-instruct`), was Maverick. `Groq(api_key=..., max_retries=1)` back to the SDK default of `max_retries=2` (no explicit cap). `json_mode` support removed from `generate_content()` entirely.
+- **Important shared-file consequence, called out explicitly:** `groq_ocr_client.py` has exactly one `VISION_MODEL` constant used by *both* pipelines — there is no way to revert Fast's model choice without also reverting Patent/Accurate's. **This means the Patent pipeline is now also back on Scout with no JSON response mode**, even though the user's complaint and revert request were specifically about the Fast pipeline. `patent_ocr_pipeline.py` and `sota_extraction_engine.py` themselves were **not** modified — they still contain the `parallel` parameter and dead-code fix from earlier today — but they now run against the reverted (Scout, non-JSON-mode) Groq client underneath. If the user wants Patent back on Maverick/JSON-mode independent of Fast's model choice, that would need `groq_ocr_client.py` to support a per-call/per-pipeline model override, which does not exist today — not built here since it wasn't asked for, but flagged for the future.
+- **Not reverted:** `Dockerfile`, `Procfile`, `render.yaml` (the gunicorn/env-var infra hardening from earlier today) — those are unrelated to extraction accuracy/correctness and the user's complaint was specifically about extraction quality, not infra. `sota_extraction_engine.py`'s new `parallel` parameter also stays (harmless, currently unused now that Fast no longer calls it, and Patent still defaults to `parallel=True`).
+
+**Why:** Direct user report that today's SOTA-engine change is producing errors, plus an explicit, timestamp-precise instruction to roll back to a specific previously-confirmed-working state rather than debug forward from here.
+
+**Verified:** `python -m py_compile` on all three reverted files — clean. Full module-import check (`GROQ_API_KEY=dummy ... import app, gemini_ocr_extract, groq_ocr_client, patent_ocr_pipeline, sota_extraction_engine`) — clean, and confirmed via direct inspection that `groq_ocr_client.VISION_MODEL` now reads `meta-llama/llama-4-scout-17b-16e-instruct`. **Not yet re-verified live** — no working `GROQ_API_KEY` available in this local environment, so whether this actually restores "perfect" extraction on Render still needs a real test once this redeploys.
+
+**Still open / needs the user:**
+1. Live re-test against `https://filetract.onrender.com` once this redeploys, to confirm Fast pipeline is genuinely back to working order.
+2. The Patent pipeline's model/JSON-mode was pulled back to Scout as an unavoidable side effect of the shared client file — flagged above; let me know if that's unwanted and Patent should be restored to Maverick independently (would need a small architecture change to `groq_ocr_client.py` to support per-caller model selection).
+3. Today's earlier SOTA-consensus accuracy work (multi-strategy + verification for Fast) is now fully undone. If the underlying "3/5 fields wrong" accuracy problem needs solving again later, it'll need a fresh approach — not simply re-applying the reverted commits, since those are exactly what just started erroring.
+4. Everything from the two 2026-07-31 entries below (Render Starter plan upgrade, external keep-alive ping, bounded image-downscale experiment) is still open and unaffected by this revert.
+
+**Files changed:**
+- `app.py`
+- `gemini_ocr_extract.py`
+- `groq_ocr_client.py`
+- `CLAUDE.md` (this file)
+
+---
+
 ### 2026-07-31 (follow-up, same day) — Fast Pipeline: Switched From Single-Call Vision to the Sequential SOTA Consensus Engine — Accuracy Over Speed
 
 **What changed:**
